@@ -1,205 +1,110 @@
 # KeyTyper
 
-KeyTyper is a macOS menu bar app that types your clipboard as key presses. It is for remote
-sessions where paste does not work, such as a locked-down VDI desktop or a remote desktop
-login screen.
+A macOS menu bar app that types your clipboard as key presses, for VDI and remote desktop
+sessions where paste does not work. Press **Control+\\** to type the clipboard into whatever
+has focus.
 
-Press **Control+\\** and KeyTyper types the clipboard text into whatever has focus.
+## Typing methods
 
-## How it types
+- **Virtual Keyboard** (recommended for remote sessions). Keys go through a virtual USB
+  keyboard, so remote clients that ignore synthetic macOS events still receive them. Needs a
+  one-time setup with an administrator password.
+- **Quartz events** (for apps on this Mac). Four ways of posting macOS key events. No setup,
+  but many remote clients ignore them. *Unicode text events* can type characters that your
+  keyboard layout lacks.
 
-KeyTyper has two kinds of typing method.
-
-**Virtual Keyboard (recommended for VDI and remote desktops).** KeyTyper sends each key
-through a virtual USB keyboard. To the remote client this looks like a real keyboard, so
-clients that ignore synthetic macOS key events still receive the keys. This method needs a
-one-time setup with an administrator password, described below.
-
-**Quartz events (for apps on this Mac).** Four methods that post macOS keyboard events
-directly. They need no setup, but many remote clients ignore them.
-
-| Method | What it does |
-|---|---|
-| HID key events | Posts key events at the lowest level macOS allows |
-| Session key events | Posts key events to the login session |
-| Direct to target app | Posts key events to the front app only |
-| Unicode text events | Sends characters instead of keys; can type characters your layout lacks |
-
-Virtual Keyboard has been tested with a VDI client connected to a Windows desktop. Other
-clients, including RDP, have not been tested yet. Reports are welcome.
-
-## Requirements
-
-- macOS 13 or later
-- Xcode Command Line Tools (`xcode-select --install`)
-- An internet connection for the first build, which downloads the virtual keyboard driver source
-- An administrator password, for Virtual Keyboard only
+Virtual Keyboard has been tested with one VDI client connected to Windows. RDP and other
+clients are untested; reports are welcome.
 
 ## Install
 
-1. Clone this repository and run `./build.sh`. It creates `KeyTyper.app` in the same folder.
-2. Move `KeyTyper.app` to `/Applications` (optional) and open it. A keyboard icon appears in
-   the menu bar.
-3. When macOS asks, allow KeyTyper under **System Settings > Privacy & Security >
-   Accessibility**.
-4. KeyTyper then offers to set up Virtual Keyboard. Choose **Run Setup**. Terminal opens and
-   asks for your administrator password.
-5. If macOS asks, approve the Karabiner system extension in System Settings (Privacy &
-   Security, or General > Login Items & Extensions > Driver Extensions).
-6. Choose **Check Virtual Keyboard** from the KeyTyper menu. It should say the Virtual
-   Keyboard is ready.
-7. Choose **Test abc123 in 3 seconds**, then click a text field in your remote session within
-   three seconds. You should see `abc123` appear.
+Requires macOS 13 or later and the Xcode Command Line Tools (`xcode-select --install`). The
+first build downloads the virtual keyboard driver source, so it needs internet access.
 
-You can run the setup again at any time from **Set Up Virtual Keyboard…** in the menu.
+1. Run `./build.sh`, then open `KeyTyper.app`. A keyboard icon appears in the menu bar.
+2. Allow KeyTyper in **System Settings > Privacy & Security > Accessibility**.
+3. When KeyTyper offers Virtual Keyboard setup, choose **Run Setup** and enter your
+   administrator password in Terminal.
+4. If macOS asks, approve the Karabiner system extension in System Settings.
+5. Choose **Check Virtual Keyboard** from the menu. It should report ready.
+6. Choose **Test abc123 in 3 seconds** and click a text field in the remote session.
 
 ## Use
 
-1. Copy some text on your Mac.
-2. Click into the text field in the remote session.
+1. Copy text on your Mac.
+2. Click the text field in the remote session.
 3. Press **Control+\\**, or choose **Type Clipboard** from the menu.
 
-Typing stops if you press **Esc** or switch to another app. Typing speed is under
-**Typing Speed** in the menu. If characters are dropped, choose a slower speed.
-
-Keep the keyboard layout on your Mac and in the remote session the same. KeyTyper sends key
-positions, and the remote side turns them into characters using its own layout.
-
-KeyTyper checks the whole text before it starts. If a character has no key on your current
-layout, it types nothing and tells you.
+Press **Esc** or switch apps to stop. If characters are dropped, choose a slower
+**Typing Speed**. Keep the keyboard layout the same on the Mac and in the remote session.
+KeyTyper types nothing if the text contains a character with no key on your layout.
 
 ## Troubleshooting
 
-**Check Virtual Keyboard** reports one of these:
-
-| Message | What to do |
+| Problem | Fix |
 |---|---|
-| Not set up | Choose Set Up Virtual Keyboard… |
-| Helper is not responding | Wait a few seconds and check again. If it continues, run the setup again. |
-| Driver is not active yet | Approve the Karabiner system extension in System Settings, then check again. |
-| Ready | Nothing. Try the abc123 test. |
+| Check Virtual Keyboard says *not set up* | Choose **Set Up Virtual Keyboard…** |
+| It says *helper is not responding* | Wait a few seconds, check again, then rerun setup if needed |
+| It says *driver is not active yet* | Approve the Karabiner system extension in System Settings |
+| Diagnostics says all characters were sent, but nothing appeared | The remote text field did not have focus. Click it and retry. |
+| The shortcut stops working after a rebuild | See [Signing](#signing) |
+| A remote app needs Control+\\ | Use **Type Clipboard** from the menu |
 
-**Last Attempt / Diagnostics** shows what happened the last time you typed: whether the
-shortcut arrived, which app was in front, and whether typing stopped early.
-
-Other common problems:
-
-- **The shortcut does nothing after a rebuild.** Without a signing certificate, macOS treats
-  each build as a new app and forgets the Accessibility permission. Quit and reopen KeyTyper
-  and allow it again, or set up signing (see [Signing](#signing)) so this stops happening.
-- **KeyTyper says it sent everything, but nothing appeared.** The keys reached the remote
-  client, but the remote text field did not have focus. Click into the field and try again.
-- **Control+\\ is used by an app in the remote session.** Use **Type Clipboard** from the
-  menu instead.
-
-The shortcut uses Control only, on purpose. Modifier keys still reach the remote session
-when KeyTyper takes the shortcut. On Windows, a lone Alt press opens the menu bar, so a
-shortcut with Option breaks typing.
+**Last Attempt / Diagnostics** in the menu shows whether the shortcut arrived, which app was
+in front, and why typing stopped.
 
 ## Uninstall
 
-1. Choose **Uninstall KeyTyper…** from the KeyTyper menu. Terminal opens.
-2. Answer whether to remove the Karabiner virtual keyboard driver as well. Answer **n** if
-   another app, such as Karabiner-Elements, uses it. If Karabiner-Elements is installed, the
-   uninstaller warns you.
-3. Enter your administrator password when asked.
-4. Delete `KeyTyper.app`.
+Choose **Uninstall KeyTyper…** from the menu. It removes the helper, settings, and the
+Accessibility entry, and asks before removing the Karabiner driver. Keep the driver if
+another app, such as Karabiner-Elements, uses it. Then delete `KeyTyper.app`.
 
-The uninstaller quits KeyTyper and removes:
+## Privacy and security
 
-- the background helper and its launch daemon
-- KeyTyper's settings and its Accessibility permission
-- if you agreed, the Karabiner driver, its files, and its install record
+KeyTyper sends key presses. It does not record them.
 
-If the driver still appears in System Settings afterwards, restart your Mac.
+- No event tap and no Input Monitoring permission. It only checks whether Esc, the modifier
+  keys, and the shortcut key are held down at that moment.
+- The clipboard is read only when you ask KeyTyper to type, and is never saved or logged.
+- No network access. Only `build.sh` downloads the driver source.
+- Virtual Keyboard adds a background helper that runs as root, because the driver accepts
+  only root clients. It listens on a local socket that only your user account can open,
+  accepts one fixed 8-byte key report at a time, and cannot read keyboard input.
+- Any program running as your user can ask the helper to press keys. Uninstall when you no
+  longer need it.
+- Setup verifies the driver package signature and will not replace a different installed
+  driver version.
 
-## What KeyTyper does and does not do
+Report security issues through GitHub private vulnerability reporting.
 
-KeyTyper sends key presses. It does not record them. Because it uses a keyboard driver and a
-background helper, here is exactly what it can and cannot see:
+## Signing
 
-- **It does not read what you type.** It does not install an event tap and does not ask for
-  the Input Monitoring permission. The only keys it checks are Esc (to stop typing), the
-  modifier keys (to wait until you let go of the shortcut), and the shortcut's own key. It
-  checks whether those keys are held down at that moment; it never receives a stream of key
-  presses.
-- **It reads the clipboard only when you ask it to type**, with the shortcut or the menu.
-  The text is typed and then discarded. It is never saved, logged, or sent anywhere.
-- **It makes no network connections.** Only `build.sh` uses the internet, to download the
-  driver source from GitHub.
-- **The helper only sends keys.** It accepts one fixed 8-byte key report at a time from your
-  Mac user account, presses that key on the virtual keyboard, and replies with one status
-  byte. It has no way to read keyboard input.
-- **It asks for one permission**: Accessibility. macOS requires it to post key events, and
-  KeyTyper checks it before typing with any method.
+macOS ties the Accessibility permission to the app's signature. `build.sh` uses the first
+of these it finds:
 
-### Security notes
+1. `KEYTYPER_SIGN_IDENTITY` (a certificate name or hash; `-` forces ad-hoc)
+2. a Developer ID Application certificate
+3. an Apple Development certificate (free with an Apple ID: Xcode > Settings > Accounts >
+   Manage Certificates)
+4. ad-hoc signing
 
-- KeyTyper runs as your user. The helper runs as root, because the virtual keyboard driver
-  accepts only root clients.
-- The helper's local socket can be opened only by your Mac user account. Any program running
-  as your user can ask it to press keys without the Accessibility permission. Uninstall
-  KeyTyper when you no longer need it.
-- Setup checks the driver package's signature before installing it, and refuses to replace a
-  different installed driver version.
-
-All of this is in about 900 lines of source in this repository, so you can check it. Please
-report security problems privately through GitHub's private vulnerability reporting.
-
-## Development
-
-### Signing
-
-macOS ties the Accessibility permission to the app's signature. `build.sh` signs with the
-first certificate it finds:
-
-1. the `KEYTYPER_SIGN_IDENTITY` environment variable, if set
-2. a **Developer ID Application** certificate (paid Apple Developer Program)
-3. an **Apple Development** certificate (free: sign in with your Apple ID in Xcode >
-   Settings > Accounts, then choose Manage Certificates > + > Apple Development)
-4. otherwise, ad-hoc signing
-
-With any certificate, you allow Accessibility once and the permission survives rebuilds.
-With ad-hoc signing, every build is a new app to macOS, so `build.sh` clears the stale
-permission entry and KeyTyper asks again when you reopen it.
-
-No Apple account? Create a self-signed certificate in Keychain Access > Certificate
-Assistant > Create a Certificate, with Certificate Type set to **Code Signing**, then build
-with its name:
+With a certificate, the permission survives rebuilds. With ad-hoc signing, `build.sh`
+clears the stale entry and macOS asks again after each build. A self-signed Code Signing
+certificate from Keychain Access also works:
 
 ```sh
 KEYTYPER_SIGN_IDENTITY='KeyTyper Local' ./build.sh
 ```
 
-The first signed build may ask for access to your keychain; choose **Always Allow**. Builds
-are not notarized, so they are meant for your own Mac.
+Builds are not notarized and are meant for your own Mac.
 
-### Files
+## Contributing
 
-| File | Purpose |
-|---|---|
-| `main.swift` | Menu bar app, shortcut, key map, and the Quartz typing methods |
-| `VirtualKeyboard.swift` | Talks to the helper over its local socket |
-| `helper/virtual-keyboard.cpp` | Root helper that drives the virtual keyboard |
-| `helper/*.sh`, `helper/*.command` | Setup and uninstall |
-| `build.sh` | Builds the app and the helper |
-| `test.sh` | Tests event construction without sending any keys |
-
-```sh
-./test.sh
-```
-
-To see which keys a piece of text would use, without typing anything:
-
-```sh
-KeyTyper.app/Contents/MacOS/KeyTyper --print-map 'Hello, world!'
-```
+Run `./test.sh` before sending changes; it checks event construction without typing
+anything. See [AGENTS.md](AGENTS.md) for architecture and project rules.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
-
-The virtual keyboard driver is
-[Karabiner-DriverKit-VirtualHIDDevice](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice)
-by pqrs.org, released into the public domain. `build.sh` downloads it at a pinned revision,
-and the built app includes its signed installer package and license.
+MIT. See [LICENSE](LICENSE). The virtual keyboard driver,
+[Karabiner-DriverKit-VirtualHIDDevice](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice),
+is by pqrs.org under the Unlicense. `build.sh` fetches it at a pinned revision.
