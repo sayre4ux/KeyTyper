@@ -45,8 +45,12 @@ the virtual keyboard driver source, so it needs internet access. Run `./build.sh
 2. Click the text field in the remote session.
 3. Press **Control+\\**, or choose **Type Clipboard** in the TypeThru panel.
 
-Press **Esc** or switch apps to stop. Keep the keyboard layout the same on the Mac and in
-the remote session.
+Press **Esc**, click the mouse, or switch apps or windows to stop. Keep the keyboard layout the
+same on the Mac and in the remote session.
+
+Line breaks are typed as Return. Turn on **Type line breaks as Shift+Return** for chat apps
+where Return sends the message; leave it off for spreadsheets, where Shift+Return moves up a
+cell.
 
 **Speed** in the panel runs from *Average typist · 50 WPM*, the default, through fast and
 record typists to *Unrealistic · 600 WPM*. If characters are dropped, choose a slower speed.
@@ -96,7 +100,8 @@ TypeThru from Applications to the Trash.
 TypeThru sends key presses. It does not record them.
 
 - No event tap and no Input Monitoring permission. It only checks whether Esc, the modifier
-  keys, and the shortcut key are held down at that moment.
+  keys, the shortcut key, or a mouse button is held down at that moment, and while typing,
+  which app and window are in front. It never sees what you type or where you click.
 - The clipboard is read only when you ask TypeThru to type, and is never saved or logged.
 - No network access. Only `build.sh` downloads the driver source.
 - Virtual Keyboard adds a background helper that runs as root, because the driver accepts
@@ -116,7 +121,7 @@ Report security issues through GitHub private vulnerability reporting.
 macOS ties the Accessibility permission to the app's signature. `build.sh` uses the first
 of these it finds:
 
-1. `KEYTYPER_SIGN_IDENTITY` (a certificate name or hash; `-` forces ad-hoc)
+1. `TYPETHRU_SIGN_IDENTITY` (a certificate name or hash; `-` forces ad-hoc)
 2. a Developer ID Application certificate
 3. an Apple Development certificate (free with an Apple ID: Xcode > Settings > Accounts >
    Manage Certificates)
@@ -127,12 +132,12 @@ clears the stale entry and macOS asks again after each build. A self-signed Code
 certificate from Keychain Access also works:
 
 ```sh
-KEYTYPER_SIGN_IDENTITY='TypeThru Local' ./build.sh
+TYPETHRU_SIGN_IDENTITY='TypeThru Local' ./build.sh
 ```
 
 Release disk images are ad-hoc signed and not notarized during the beta. With a Developer ID
 certificate, `package.sh` signs with the hardened runtime, and notarizes the disk image when
-`KEYTYPER_NOTARY_PROFILE` names a `notarytool` keychain profile.
+`TYPETHRU_NOTARY_PROFILE` names a `notarytool` keychain profile.
 
 ## Contributing
 

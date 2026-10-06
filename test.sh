@@ -2,7 +2,7 @@
 # Exercise actual event construction without posting any input or reading the clipboard.
 set -eu
 cd "$(dirname "$0")"
-TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/keytyper-tests.XXXXXX")
+TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/typethru-tests.XXXXXX")
 trap 'rm -rf "$TEST_DIR"' EXIT HUP INT TERM
 cat VirtualKeyboard.swift Panel.swift Brand.swift > "$TEST_DIR/main.swift"
 sed '/^\/\/ MARK: - Entry point/,$d' main.swift >> "$TEST_DIR/main.swift"
@@ -156,6 +156,21 @@ section("Typing tests on this Mac's keyboard layout") {
         let text = typer.replacingUntypable(in: test.text, map: layout, method: .virtualKeyboard).text
         check(typer.unsupported(in: text, map: layout, method: .virtualKeyboard).isEmpty, "\(test.title) on this layout")
     }
+}
+
+section("Line breaks as Shift+Return") {
+    let shifted = Typer.shiftReturn(us)
+    for ch: Character in ["\n", "\r", "\r\n"] {
+        check(shifted[ch]?.keyCode == 36 && shifted[ch]?.shift == true, "\(ch.debugDescription) is Shift+Return")
+        check(us[ch] == nil || us[ch]?.shift == false, "plain map keeps Return unshifted")
+        for method in quartz {
+            let events = typer.events(for: ch, map: shifted, method: method, delay: 0)!
+            check(events.count == 4 && events[1].0.getIntegerValueField(.keyboardEventKeycode) == 36, "\(method): Shift+Return events")
+            check(events[3].0.flags.isEmpty, "\(method): Shift released after Return")
+        }
+        check(typer.typeable(ch, map: shifted, method: .virtualKeyboard), "Virtual Keyboard can send Shift+Return")
+    }
+    check(shifted["\t"]?.shift == false && shifted["a"]?.shift == false, "only line breaks change")
 }
 
 section("Speed levels and Virtual Keyboard timing") {

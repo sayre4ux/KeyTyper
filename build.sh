@@ -12,9 +12,9 @@ APP=TypeThru.app
 
 # A stable signing identity lets macOS keep the Accessibility permission across builds.
 # Any code signing certificate works: paid Developer ID, free Apple Development, or self-signed.
-# Set KEYTYPER_SIGN_IDENTITY to a certificate name or hash, or to - to force ad-hoc signing.
+# Set TYPETHRU_SIGN_IDENTITY to a certificate name or hash, or to - to force ad-hoc signing.
 # DECISION: without the variable, prefer Developer ID, then Apple Development, then ad-hoc.
-IDENTITY=${KEYTYPER_SIGN_IDENTITY-}
+IDENTITY=${TYPETHRU_SIGN_IDENTITY-}
 if [ -z "$IDENTITY" ]; then
     IDENTITIES=$(security find-identity -v -p codesigning 2>/dev/null || true)
     for kind in 'Developer ID Application' 'Apple Development'; do
@@ -49,10 +49,10 @@ fi
 [ "$(git -C "$SOURCE" rev-parse HEAD)" = "$REV" ] || { echo 'Unexpected virtual HID source revision'; exit 1; }
 # DECISION: universal binaries, so one download runs on Apple silicon and Intel Macs.
 clang++ -std=c++23 -O2 -Wall -Wextra -pthread -arch arm64 -arch x86_64 -mmacosx-version-min=13.0 -I "$SOURCE/include" -I "$SOURCE/vendor/vendor/include" \
-    helper/virtual-keyboard.cpp -o "$APP/Contents/Resources/KeyTyper-VirtualKeyboard"
-sign --identifier local.keytyper.virtual-keyboard "$APP/Contents/Resources/KeyTyper-VirtualKeyboard"
-"$APP/Contents/Resources/KeyTyper-VirtualKeyboard" --check-protocol
-rm -f "$APP/Contents/Resources/"*.command "$APP/Contents/Resources/"*.sh
+    helper/virtual-keyboard.cpp -o "$APP/Contents/Resources/TypeThru-VirtualKeyboard"
+sign --identifier io.github.sayre4ux.typethru.virtual-keyboard "$APP/Contents/Resources/TypeThru-VirtualKeyboard"
+"$APP/Contents/Resources/TypeThru-VirtualKeyboard" --check-protocol
+rm -f "$APP/Contents/Resources/"*.command "$APP/Contents/Resources/"*.sh "$APP/Contents/Resources/KeyTyper-VirtualKeyboard"
 cp helper/install-helper.sh helper/uninstall-helper.sh "$APP/Contents/Resources/"
 cp "$SOURCE/dist/Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg" "$APP/Contents/Resources/"
 cp "$SOURCE/LICENSE.md" "$APP/Contents/Resources/Karabiner-LICENSE.txt"
@@ -67,25 +67,25 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleIdentifier</key><string>local.keytyper</string>
+  <key>CFBundleIdentifier</key><string>io.github.sayre4ux.typethru</string>
   <key>CFBundleName</key><string>TypeThru</string>
   <key>CFBundleExecutable</key><string>TypeThru</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.2</string>
-  <key>CFBundleVersion</key><string>2</string>
+  <key>CFBundleShortVersionString</key><string>0.3</string>
+  <key>CFBundleVersion</key><string>3</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
 </dict>
 </plist>
 PLIST
-sign --identifier local.keytyper "$APP"
+sign --identifier io.github.sayre4ux.typethru "$APP"
 
 # macOS ties the Accessibility permission to the signature. When the new build cannot reuse the
 # old permission (ad-hoc, or a different identity), clear the stale entry so macOS asks cleanly.
 LAST=$(cat .build/last-sign-identity 2>/dev/null || true)
 if [ "$IDENTITY" = - ] || [ "$IDENTITY" != "$LAST" ]; then
-    tccutil reset Accessibility local.keytyper >/dev/null 2>&1 || true
+    tccutil reset Accessibility io.github.sayre4ux.typethru >/dev/null 2>&1 || true
     echo 'Cleared the old Accessibility permission. Allow TypeThru again when it asks.'
 fi
 printf '%s\n' "$IDENTITY" > .build/last-sign-identity

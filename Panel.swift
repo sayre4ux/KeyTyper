@@ -10,6 +10,7 @@ final class PanelModel: ObservableObject {
     @Published var method = TypingMethod.virtualKeyboard
     @Published var speedIndex = 0
     @Published var replaceSymbols = true
+    @Published var shiftReturn = false
     @Published var status = Status(text: "Checking…", ready: false)
     @Published var busy = false
     var speeds: [String] = []
@@ -35,9 +36,10 @@ struct PanelView: View {
                 .frame(maxWidth: .infinity)
             }
             .prominentGlass()
+            .tint(Brand.accent)
             .controlSize(.large)
             .disabled(model.busy)
-            Text("Press Esc or switch apps to stop typing.")
+            Text("Esc, a mouse click, or switching apps stops typing.")
                 .font(.caption).foregroundStyle(.secondary)
 
             settings
@@ -46,7 +48,9 @@ struct PanelView: View {
         }
         .padding(18)
         .frame(width: 340)
+        .noFocusRing()
         .glassPanel()
+        .environment(\.colorScheme, .dark)
     }
 
     private var header: some View {
@@ -56,6 +60,7 @@ struct PanelView: View {
             Spacer()
             HStack(spacing: 6) {
                 Circle().fill(model.status.ready ? Color.green : Color.orange).frame(width: 8, height: 8)
+                    .shadow(color: model.status.ready ? .green : .orange, radius: 4)
                 Text(model.status.text).font(.caption.weight(.medium))
             }
             .padding(.horizontal, 10).padding(.vertical, 5)
@@ -84,7 +89,10 @@ struct PanelView: View {
                 Text(model.speedDetails[model.speedIndex]).font(.caption).foregroundStyle(.secondary)
             }
             Toggle("Replace symbols without a key (• → -)", isOn: binding(\.replaceSymbols))
-                .toggleStyle(.switch).controlSize(.small)
+                .toggleStyle(.switch).controlSize(.small).tint(Brand.accent)
+            Toggle("Type line breaks as Shift+Return", isOn: binding(\.shiftReturn))
+                .toggleStyle(.switch).controlSize(.small).tint(Brand.accent)
+                .help("For chat apps where Return sends the message. Spreadsheets move up a cell instead.")
         }
         .font(.callout)
     }
@@ -139,10 +147,14 @@ struct PanelView: View {
 private extension View {
     @ViewBuilder func glassPanel() -> some View {
         if #available(macOS 26, *) {
-            GlassEffectContainer { self.glassEffect(.regular, in: .rect(cornerRadius: 26)) }
+            GlassEffectContainer { self.glassEffect(.regular.tint(Color.black.opacity(0.45)), in: .rect(cornerRadius: 26)) }
         } else {
-            background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
+    }
+
+    @ViewBuilder func noFocusRing() -> some View {
+        if #available(macOS 14, *) { focusEffectDisabled() } else { self }
     }
 
     @ViewBuilder func glassCapsule() -> some View {
@@ -172,6 +184,7 @@ final class GlassPanel: NSPanel {
         // DECISION: the glass draws its own edge; a window shadow outlines the square frame.
         hasShadow = false
         hidesOnDeactivate = false
+        appearance = NSAppearance(named: .darkAqua)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         contentView = content
     }

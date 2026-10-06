@@ -22,10 +22,11 @@ a few shell scripts) and has no package manager or Xcode project.
 | `package.sh` | Runs `build.sh` and makes the download disk image; notarizes it when configured |
 | `test.sh` | Compiles `main.swift` without its entry point and checks event construction |
 
-Internal identifiers keep the original name KeyTyper: bundle ID `local.keytyper`, the
-launch daemon label and socket `local.keytyper.virtual-keyboard`, the helper binary
-`KeyTyper-VirtualKeyboard`, and `KEYTYPER_SIGN_IDENTITY`. Renaming them would orphan existing
-installs and Accessibility permissions, so change them only together with a migration.
+Identifiers: bundle ID `io.github.sayre4ux.typethru`, launch daemon label and socket
+`io.github.sayre4ux.typethru.virtual-keyboard`, helper binary `TypeThru-VirtualKeyboard`.
+Builds before 0.3 were called KeyTyper and used `local.keytyper`; setup removes that old
+helper and the app moves its settings over once (`migrateFromKeyTyper`). Changing an
+identifier again needs the same kind of migration.
 
 Git-ignored local state: `TypeThru.app/`, `.build/` (driver source, module cache, last
 signing identity), `.autopilot/`, `DEVLOG.md`.
@@ -36,7 +37,7 @@ signing identity), `.autopilot/`, `DEVLOG.md`.
 ./test.sh                                                  # unit checks; posts no input
 ./build.sh                                                 # builds TypeThru.app
 TypeThru.app/Contents/MacOS/TypeThru --print-map 'text'    # keys a text would use; types nothing
-TypeThru.app/Contents/Resources/KeyTyper-VirtualKeyboard --check-protocol   # helper packet validation
+TypeThru.app/Contents/Resources/TypeThru-VirtualKeyboard --check-protocol   # helper packet validation
 ```
 
 Run `./test.sh` and `./build.sh` after every code change. Both must pass.
@@ -62,7 +63,9 @@ Run `./test.sh` and `./build.sh` after every code change. Both must pass.
 
 **Trigger.** A Carbon hotkey (Control+\) fires on key release. The app waits until all
 modifiers and the hotkey key are up, then types into the app that was in front when the
-shortcut was pressed. Typing stops on Esc or if the front app changes. The whole text is
+shortcut was pressed. `StopWatcher` polls every 10 ms while typing and stops on Esc, a new
+mouse click, or a change of front app or front window (Accessibility). Return can be typed as
+Shift+Return (`Typer.shiftReturn`), off by default. The whole text is
 checked against the layout before anything is sent; unsupported characters abort the run.
 
 **Quartz methods** build a `CGEvent` pair per character (with explicit Shift
@@ -84,7 +87,7 @@ helper, which presses the key on the Karabiner DriverKit virtual keyboard:
 
 Reply byte: 0 done or ready, 1 driver not ready, 2 invalid packet. The helper accepts
 connections only from the uid given at install, via `getpeereid`. Socket:
-`/var/run/local.keytyper.virtual-keyboard.sock`, mode 0600, owned by that user.
+`/var/run/io.github.sayre4ux.typethru.virtual-keyboard.sock`, mode 0600, owned by that user.
 
 Keep the two sides in sync. A protocol change touches `VirtualKeyboard.swift`, `valid()` and
 `--check-protocol` in the helper, and needs the user to rerun setup, because the installed

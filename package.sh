@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds TypeThru.app and wraps it in TypeThru-<version>.dmg for download.
-# With a Developer ID certificate and KEYTYPER_NOTARY_PROFILE (a notarytool keychain profile),
+# With a Developer ID certificate and TYPETHRU_NOTARY_PROFILE (a notarytool keychain profile),
 # the disk image is also notarized, so it opens without a Gatekeeper warning.
 set -e
 cd "$(dirname "$0")"
@@ -26,8 +26,8 @@ A keyboard icon appears in the menu bar. Copy text, click a field in your remote
 session, and press Control+\ to type it.
 TEXT
 hdiutil create -quiet -volname TypeThru -srcfolder "$STAGE" -format UDZO -fs HFS+ "$DMG"
-if [ -n "${KEYTYPER_NOTARY_PROFILE-}" ]; then
-    xcrun notarytool submit "$DMG" --keychain-profile "$KEYTYPER_NOTARY_PROFILE" --wait
+if [ -n "${TYPETHRU_NOTARY_PROFILE-}" ]; then
+    xcrun notarytool submit "$DMG" --keychain-profile "$TYPETHRU_NOTARY_PROFILE" --wait
     xcrun stapler staple "$DMG"
 fi
 shasum -a 256 "$DMG"

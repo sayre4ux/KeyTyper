@@ -17,7 +17,7 @@ extern char** environ;
 namespace dk = pqrs::karabiner::driverkit;
 using namespace std::chrono_literals;
 volatile sig_atomic_t stopping = 0;
-constexpr auto socketPath = "/var/run/local.keytyper.virtual-keyboard.sock";
+constexpr auto socketPath = "/var/run/io.github.sayre4ux.typethru.virtual-keyboard.sock";
 constexpr auto daemonPath = "/Library/Application Support/org.pqrs/Karabiner-DriverKit-VirtualHIDDevice/Applications/Karabiner-VirtualHIDDevice-Daemon.app/Contents/MacOS/Karabiner-VirtualHIDDevice-Daemon";
 
 bool valid(const uint8_t* p) {

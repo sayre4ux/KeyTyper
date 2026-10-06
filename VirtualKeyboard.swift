@@ -13,8 +13,8 @@ enum VirtualKeyboard {
         38:13, 39:52, 40:14, 41:51, 42:49, 43:54, 44:56, 45:17, 46:16,
         47:55, 48:43, 49:44, 50:53
     ]
-    static let socketPath = "/var/run/local.keytyper.virtual-keyboard.sock"
-    static let daemonPlist = "/Library/LaunchDaemons/local.keytyper.virtual-keyboard.plist"
+    static let socketPath = "/var/run/io.github.sayre4ux.typethru.virtual-keyboard.sock"
+    static let daemonPlist = "/Library/LaunchDaemons/io.github.sayre4ux.typethru.virtual-keyboard.plist"
     static let driverDirectory = "/Library/Application Support/org.pqrs/Karabiner-DriverKit-VirtualHIDDevice"
     static let manager = "/Applications/.Karabiner-VirtualHIDDevice-Manager.app/Contents/MacOS/Karabiner-VirtualHIDDevice-Manager"
 

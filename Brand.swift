@@ -1,31 +1,55 @@
 import AppKit
+import SwiftUI
 
-// TypeThru mark: a T whose stem turns into an arrow, typing through to the remote side.
+// TypeThru mark: keystrokes (dashes) pass through a gap in a barrier and leave as an arrow.
 enum Brand {
-    /// The mark in a unit square (y up), stroked with round caps and joins.
-    static func glyph(in rect: NSRect) -> NSBezierPath {
-        func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: rect.minX + x * rect.width, y: rect.minY + y * rect.height) }
-        let path = NSBezierPath()
-        path.move(to: p(0.16, 0.80)); path.line(to: p(0.68, 0.80))
-        path.move(to: p(0.42, 0.80)); path.line(to: p(0.42, 0.42))
-        path.curve(to: p(0.56, 0.26), controlPoint1: p(0.42, 0.33), controlPoint2: p(0.47, 0.26))
-        path.line(to: p(0.84, 0.26))
-        path.move(to: p(0.72, 0.39)); path.line(to: p(0.85, 0.26)); path.line(to: p(0.72, 0.13))
+    static let cyan = NSColor(red: 0.36, green: 0.88, blue: 1.00, alpha: 1)
+    static let violet = NSColor(red: 0.55, green: 0.38, blue: 1.00, alpha: 1)
+    static let accent = Color(red: 0.42, green: 0.58, blue: 1.00)
+
+    private static func point(_ rect: NSRect, _ x: CGFloat, _ y: CGFloat) -> NSPoint {
+        NSPoint(x: rect.minX + x * rect.width, y: rect.minY + y * rect.height)
+    }
+
+    private static func rounded(_ path: NSBezierPath) -> NSBezierPath {
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
         return path
     }
 
-    /// Menu bar icon: the mark inside a key outline, as a template so macOS tints it.
+    /// The barrier: a vertical bar with a gap in the middle, in a unit square (y up).
+    static func barrier(in rect: NSRect) -> NSBezierPath {
+        let path = NSBezierPath()
+        path.move(to: point(rect, 0.50, 0.92)); path.line(to: point(rect, 0.50, 0.66))
+        path.move(to: point(rect, 0.50, 0.34)); path.line(to: point(rect, 0.50, 0.08))
+        return rounded(path)
+    }
+
+    /// Keystrokes before the barrier.
+    static func keystrokes(in rect: NSRect) -> NSBezierPath {
+        let path = NSBezierPath()
+        path.move(to: point(rect, 0.04, 0.50)); path.line(to: point(rect, 0.12, 0.50))
+        path.move(to: point(rect, 0.24, 0.50)); path.line(to: point(rect, 0.32, 0.50))
+        return rounded(path)
+    }
+
+    /// The arrow through the gap and out the other side.
+    static func arrow(in rect: NSRect) -> NSBezierPath {
+        let path = NSBezierPath()
+        path.move(to: point(rect, 0.44, 0.50)); path.line(to: point(rect, 0.94, 0.50))
+        path.move(to: point(rect, 0.78, 0.65)); path.line(to: point(rect, 0.95, 0.50)); path.line(to: point(rect, 0.78, 0.35))
+        return rounded(path)
+    }
+
+    /// Menu bar icon, as a template so macOS tints it for light and dark menu bars.
     static func menuBarImage() -> NSImage {
-        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { bounds in
-            let key = NSBezierPath(roundedRect: bounds.insetBy(dx: 1.25, dy: 1.25), xRadius: 4.5, yRadius: 4.5)
-            key.lineWidth = 1.5
+        let image = NSImage(size: NSSize(width: 20, height: 18), flipped: false) { bounds in
+            let rect = bounds.insetBy(dx: 1.5, dy: 1)
             NSColor.black.setStroke()
-            key.stroke()
-            let mark = glyph(in: bounds.insetBy(dx: 3.5, dy: 3.5))
-            mark.lineWidth = 1.7
-            mark.stroke()
+            for path in [barrier(in: rect), keystrokes(in: rect), arrow(in: rect)] {
+                path.lineWidth = 1.8
+                path.stroke()
+            }
             return true
         }
         image.isTemplate = true

@@ -125,6 +125,58 @@ enum TypingTest: CaseIterable {
     var usesSelectedSpeed: Bool { self == .long }
 }
 
+/// Stops typing when the user acts: Esc, a mouse click, or a different app or window in front.
+/// It polls key and button state on its own thread, so a quick tap is noticed even while a key
+/// is held. It does not see which keys were typed or where the mouse was clicked.
+final class StopWatcher {
+    private let lock = NSLock()
+    private var reason: String?
+    private var finished = false
+
+    var stopReason: String? { lock.lock(); defer { lock.unlock() }; return reason }
+
+    init(target: pid_t) {
+        let app = AXUIElementCreateApplication(target)
+        let window = StopWatcher.focusedWindow(of: app)
+        let buttons: [CGMouseButton] = [.left, .right, .center]
+        // Buttons already down when typing starts (finishing a click on the target field) do not count.
+        var wasDown = buttons.map { CGEventSource.buttonState(.hidSystemState, button: $0) }
+        Thread.detachNewThread { [self] in
+            var tick = 0
+            while !isFinished {
+                var found: String?
+                if CGEventSource.keyState(.hidSystemState, key: CGKeyCode(kVK_Escape)) { found = "Esc pressed" }
+                let down = buttons.map { CGEventSource.buttonState(.hidSystemState, button: $0) }
+                if zip(down, wasDown).contains(where: { $0 && !$1 }) { found = "the mouse was clicked" }
+                wasDown = down
+                if NSWorkspace.shared.frontmostApplication?.processIdentifier != target { found = "the front app changed" }
+                // Accessibility queries are slower, so check the window every 50 ms.
+                if tick % 5 == 0, let window, !StopWatcher.same(window, StopWatcher.focusedWindow(of: app)) {
+                    found = "the front window changed"
+                }
+                if let found { stop(found); return }
+                tick += 1
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+        }
+    }
+
+    private var isFinished: Bool { lock.lock(); defer { lock.unlock() }; return finished }
+
+    private func stop(_ why: String) { lock.lock(); if reason == nil { reason = why }; lock.unlock() }
+
+    func finish() { lock.lock(); finished = true; lock.unlock() }
+
+    private static func focusedWindow(of app: AXUIElement) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
+    }
+
+    private static func same(_ a: AXUIElement, _ b: AXUIElement?) -> Bool { b.map { CFEqual(a, $0) } ?? false }
+}
+
 final class Typer {
     // Keep the source identical across modes to isolate the delivery route.
     private let source = CGEventSource(stateID: .hidSystemState)
@@ -177,13 +229,10 @@ final class Typer {
               method: TypingMethod, target: pid_t) -> TypeResult {
         let total = text.count
         let delay = Typer.delay(for: interval)
+        let watcher = StopWatcher(target: target)
+        defer { watcher.finish() }
         for (index, ch) in text.enumerated() {
-            if CGEventSource.keyState(.hidSystemState, key: CGKeyCode(kVK_Escape)) {
-                return .cancelled(typed: index, total: total, reason: "Esc pressed")
-            }
-            if NSWorkspace.shared.frontmostApplication?.processIdentifier != target {
-                return .cancelled(typed: index, total: total, reason: "the front app changed")
-            }
+            if let reason = watcher.stopReason { return .cancelled(typed: index, total: total, reason: reason) }
             if method == .virtualKeyboard {
                 guard let stroke = map[ch], VirtualKeyboard.press(stroke, interval: interval) else {
                     return .cancelled(typed: index, total: total,
@@ -206,6 +255,13 @@ final class Typer {
 
     /// Quartz events hold each key for 10 ms, so the rest of the interval follows the key-up.
     static func delay(for interval: TimeInterval) -> TimeInterval { max(0, interval - 0.01) }
+
+    /// Line breaks as Shift+Return, for apps where Return sends or submits.
+    static func shiftReturn(_ map: [Character: KeyStroke]) -> [Character: KeyStroke] {
+        var map = map
+        for ch: Character in ["\n", "\r", "\r\n"] { map[ch] = KeyStroke(keyCode: CGKeyCode(kVK_Return), shift: true) }
+        return map
+    }
 
     // Pure Quartz event construction: exercised by test.sh without posting keys.
     func events(for ch: Character, map: [Character: KeyStroke], method: TypingMethod,
@@ -322,14 +378,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         get { UserDefaults.standard.object(forKey: "replaceSymbols") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "replaceSymbols") }
     }
+    // DECISION: off by default. Shift+Return is a soft line break in chat apps and word processors,
+    // but moves up a cell in spreadsheets and may do nothing in terminals.
+    private var shiftReturn: Bool {
+        get { UserDefaults.standard.bool(forKey: "shiftReturn") }
+        set { UserDefaults.standard.set(newValue, forKey: "shiftReturn") }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // DECISION: one dark look everywhere, alerts included, to match the panel and icon.
+        NSApp.appearance = NSAppearance(named: .darkAqua)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = Brand.menuBarImage()
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePanel)
         setUpPanel()
         if requireApplicationsFolder() { return }
+        migrateFromKeyTyper()
 
         onHotKey = { [weak self] in self?.trigger(fromMenu: false) }
         if !registerHotKey() {
@@ -348,6 +413,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               "Drag TypeThru into the Applications folder, eject the TypeThru disk, then open TypeThru from Applications.")
         NSApp.terminate(nil)
         return true
+    }
+
+    /// Builds before 0.3 were called KeyTyper. Move their settings once, then remove the old
+    /// settings and Accessibility entry. The old helper is replaced the next time setup runs.
+    private func migrateFromKeyTyper() {
+        let defaults = UserDefaults.standard
+        let old = "local.keytyper"
+        guard !defaults.bool(forKey: "migratedFromKeyTyper") else { return }
+        defaults.set(true, forKey: "migratedFromKeyTyper")
+        guard let settings = UserDefaults.standard.persistentDomain(forName: old) else { return }
+        // DECISION: the onboarding flag is not copied, so the new helper's setup is offered again.
+        for key in ["typingMethodV2", "typingInterval", "replaceSymbols", "shiftReturn"] {
+            if let value = settings[key] { defaults.set(value, forKey: key) }
+        }
+        defaults.removePersistentDomain(forName: old)
+        let reset = Process()
+        reset.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        reset.arguments = ["reset", "Accessibility", old]
+        try? reset.run()
     }
 
     /// First run: Accessibility first, then Virtual Keyboard setup, so the two prompts never overlap.
@@ -375,6 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.method = model.method
             self.interval = self.speeds[model.speedIndex].interval
             self.replaceSymbols = model.replaceSymbols
+            self.shiftReturn = model.shiftReturn
             if methodChanged { self.refreshStatus() }
         }
         model.perform = { [weak self] action in self?.perform(action) }
@@ -388,6 +473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.method = method
         model.speedIndex = speeds.firstIndex { abs($0.interval - interval) < 0.0001 } ?? 0
         model.replaceSymbols = replaceSymbols
+        model.shiftReturn = shiftReturn
         model.busy = busy
         panel.onClose = { [weak self] in self?.panelClosedAt = Date() }
         panel.show(below: button)
@@ -513,10 +599,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setBusy(false)
         if case let .failed(reason) = result { alert("Uninstall did not finish", reason); return }
         guard result == .done else { return }
-        UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? "local.keytyper")
+        UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? "io.github.sayre4ux.typethru")
         let reset = Process()
         reset.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
-        reset.arguments = ["reset", "Accessibility", Bundle.main.bundleIdentifier ?? "local.keytyper"]
+        reset.arguments = ["reset", "Accessibility", Bundle.main.bundleIdentifier ?? "io.github.sayre4ux.typethru"]
         var resetDone = false
         if (try? reset.run()) != nil { reset.waitUntilExit(); resetDone = reset.terminationStatus == 0 }
         alert("TypeThru is uninstalled", "Move TypeThru from Applications to the Trash to finish."
@@ -558,7 +644,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert("Nothing typed", "The clipboard has no text. You can try a typing test from the TypeThru panel.")
             return
         }
-        let map = buildKeyMap()
+        let map = shiftReturn ? Typer.shiftReturn(buildKeyMap()) : buildKeyMap()
+        if shiftReturn { lastAttempt += "\nLine breaks: Shift+Return." }
         // The smart symbols test exists to show the replacements, so it always replaces.
         let (text, replaced) = (replaceSymbols || test == .smartSymbols) && method != .unicode
             ? typer.replacingUntypable(in: original, map: map, method: method) : (original, 0)
