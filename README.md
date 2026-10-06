@@ -7,7 +7,7 @@
 
 <p align="center">
   Type your clipboard into VDI and remote desktops where paste does not work.<br>
-  <a href="https://github.com/sayre4ux/TypeThru/releases"><b>Download for macOS</b></a>
+  <a href="https://github.com/sayre4ux/KeyTyper/releases"><b>Download for macOS</b></a>
 </p>
 
 <p align="center">
@@ -21,12 +21,13 @@
 - **Smart symbols**: bullets, curly quotes, and dashes are typed as plain keys.
 - **New lines, not sends**: line breaks are typed as Shift+Return.
 - **Stops instantly** when you press Esc, click, or switch apps.
+- **Your shortcut**: Control+\\ by default, or choose your own.
 
 ## Install
 
 Requires macOS 13 or later.
 
-1. Download the `.dmg` from [Releases](https://github.com/sayre4ux/TypeThru/releases).
+1. Download the `.dmg` from [Releases](https://github.com/sayre4ux/KeyTyper/releases).
 2. Drag **TypeThru** into **Applications**, then open it.
 3. If macOS says it cannot verify TypeThru, go to **System Settings › Privacy & Security**
    and choose **Open Anyway**.
@@ -39,7 +40,7 @@ Upgrading from KeyTyper? Delete the old app and run **Set Up** once.
 
 1. Copy text on your Mac.
 2. Click a text field in the remote session.
-3. Press **Control+\\**.
+3. Press **Control+\\** (or your own shortcut).
 
 Click the menu bar icon to change the shortcut or speed, run a typing test, or turn options
 off. Control alone is the safest shortcut, because other modifier keys also reach the remote
