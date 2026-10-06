@@ -7,7 +7,7 @@
 
 <p align="center">
   Type your clipboard into VDI and remote desktops where paste does not work.<br>
-  <a href="https://github.com/sayre4ux/KeyTyper/releases"><b>Download for macOS</b></a>
+  <a href="https://github.com/sayre4ux/TypeThru/releases"><b>Download for macOS</b></a>
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 
 Requires macOS 13 or later.
 
-1. Download the `.dmg` from [Releases](https://github.com/sayre4ux/KeyTyper/releases).
+1. Download the `.dmg` from [Releases](https://github.com/sayre4ux/TypeThru/releases).
 2. Drag **TypeThru** into **Applications**, then open it.
 3. If macOS says it cannot verify TypeThru, go to **System Settings › Privacy & Security**
    and choose **Open Anyway**.
