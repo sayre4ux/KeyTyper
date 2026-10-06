@@ -1,4 +1,4 @@
-// KeyTyper Virtual Keyboard. Local, single-user HID bridge; never reads the clipboard.
+// TypeThru Virtual Keyboard. Local, single-user HID bridge; never reads the clipboard.
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
         if (!valid(good) || valid(bad)) return 1;
         memcpy(bad, good, 8); bad[3] = 8; if (valid(bad)) return 1;
         memcpy(bad, good, 8); bad[4] = 0; if (valid(bad)) return 1;
-        std::cout << "KeyTyper Virtual Keyboard protocol checks passed (no input sent).\n";
+        std::cout << "TypeThru Virtual Keyboard protocol checks passed (no input sent).\n";
         return 0;
     }
     if (argc != 2 || geteuid() != 0) return 2;

@@ -1,4 +1,4 @@
-// KeyTyper: clipboard typing through a virtual HID keyboard or Quartz events.
+// TypeThru: clipboard typing through a virtual HID keyboard or Quartz events.
 
 import AppKit
 import Carbon.HIToolbox
@@ -278,8 +278,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: "KeyTyper")
+        statusItem.button?.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: "TypeThru")
         rebuildMenu()
+        if requireApplicationsFolder() { return }
 
         onHotKey = { [weak self] in self?.trigger(fromMenu: false) }
         if !registerHotKey() {
@@ -287,6 +288,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if !AXIsProcessTrusted() { promptForAccessibility() }
         continueOnboarding()
+    }
+
+    /// An app opened from the disk image, or one macOS moved to a temporary copy, loses its
+    /// Accessibility permission later. Ask the user to move it first. Returns true when quitting.
+    private func requireApplicationsFolder() -> Bool {
+        let path = Bundle.main.bundlePath
+        guard path.hasPrefix("/Volumes/") || path.contains("/AppTranslocation/") else { return false }
+        alert("Move TypeThru to Applications",
+              "Drag TypeThru into the Applications folder, eject the TypeThru disk, then open TypeThru from Applications.")
+        NSApp.terminate(nil)
+        return true
     }
 
     /// First run: Accessibility first, then Virtual Keyboard setup, so the two prompts never overlap.
@@ -340,12 +352,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         replace.state = replaceSymbols ? .on : .off
         menu.addItem(withTitle: "Set Up Virtual Keyboard…", action: #selector(setupVirtualKeyboard), keyEquivalent: "")
         menu.addItem(withTitle: "Check Virtual Keyboard", action: #selector(checkVirtualKeyboard), keyEquivalent: "")
-        menu.addItem(withTitle: "Uninstall KeyTyper…", action: #selector(uninstall), keyEquivalent: "")
+        menu.addItem(withTitle: "Uninstall TypeThru…", action: #selector(uninstall), keyEquivalent: "")
         menu.addItem(withTitle: "Check Accessibility Permission", action: #selector(checkPermission), keyEquivalent: "")
         menu.addItem(withTitle: "Last Attempt / Diagnostics", action: #selector(showDiagnostics), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Press Esc or switch apps to stop typing", action: nil, keyEquivalent: "")
-        menu.addItem(withTitle: "Quit KeyTyper", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit TypeThru", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         for item in menu.items where item.action != nil { item.target = item.action == #selector(NSApplication.terminate(_:)) ? NSApp : self }
         for item in speedMenu.items { item.target = self }
         statusItem.menu = menu
@@ -373,16 +385,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func setupVirtualKeyboard() {
+        guard !busy else { NSSound.beep(); return }
         NSApp.activate(ignoringOtherApps: true)
         let sheet = NSAlert()
-        sheet.messageText = "Set up KeyTyper Virtual Keyboard"
-        sheet.informativeText = "Virtual Keyboard types through a virtual USB keyboard, so VDI and remote desktop clients receive real key presses.\n\n1. Run the one-time setup and enter your Mac administrator password in Terminal.\n2. Approve the Karabiner DriverKit system extension in System Settings if asked. An already approved driver is reused.\n3. Return here, choose Check Virtual Keyboard, then try Test abc123 in 3 seconds.\n\nKeyTyper itself stays unprivileged. A small helper runs in the background and accepts keyboard reports only from your Mac user account. KeyTyper only sends key presses. It never reads what you type, and clipboard text is never written to files or logs. Keep the keyboard layout on this Mac and in the remote session the same.\n\nTo remove everything later, choose Uninstall KeyTyper… from the KeyTyper menu."
-        sheet.addButton(withTitle: "Run Setup")
+        sheet.messageText = "Set up TypeThru Virtual Keyboard"
+        sheet.informativeText = "Virtual Keyboard types through a virtual USB keyboard, so VDI and remote desktop clients receive real key presses.\n\n1. Choose Set Up and enter your Mac administrator password. This installs a small background helper and the Karabiner virtual keyboard driver. An already installed driver is reused.\n2. If macOS asks, allow the Karabiner driver in System Settings.\n3. Choose Test abc123 in 3 seconds, then click a text field in your remote session.\n\nTypeThru itself stays unprivileged. A small helper runs in the background and accepts keyboard reports only from your Mac user account. TypeThru only sends key presses. It never reads what you type, and clipboard text is never written to files or logs. Keep the keyboard layout on this Mac and in the remote session the same.\n\nTo remove everything later, choose Uninstall TypeThru… from the TypeThru menu."
+        sheet.addButton(withTitle: "Set Up")
         sheet.addButton(withTitle: "Later")
-        if sheet.runModal() == .alertFirstButtonReturn,
-           let url = Bundle.main.url(forResource: "Set Up Virtual Keyboard", withExtension: "command") {
-            NSWorkspace.shared.open(url)
+        guard sheet.runModal() == .alertFirstButtonReturn else { return }
+        let result = VirtualKeyboard.runAsAdministrator(
+            "install-helper", [String(getuid())],
+            prompt: "TypeThru needs your password to install its Virtual Keyboard helper.")
+        if case let .failed(reason) = result { alert("Setup did not finish", reason); return }
+        guard result == .done else { return }
+        busy = true
+        statusItem.button?.title = "…"
+        DispatchQueue.global(qos: .userInitiated).async {
+            VirtualKeyboard.runManager("activate")
+            // The helper connects to the driver within a few seconds of starting.
+            var status = VirtualKeyboard.status()
+            for _ in 0..<10 where status != .ready {
+                Thread.sleep(forTimeInterval: 1)
+                status = VirtualKeyboard.status()
+            }
+            DispatchQueue.main.async {
+                self.busy = false
+                self.statusItem.button?.title = ""
+                if status == .driverNotReady { self.askToApproveDriver() } else { self.alert(status.title, status.help) }
+            }
         }
+    }
+
+    private func askToApproveDriver() {
+        NSApp.activate(ignoringOtherApps: true)
+        let sheet = NSAlert()
+        sheet.messageText = "Allow the Karabiner driver"
+        sheet.informativeText = "The helper is installed. In System Settings, allow the Karabiner virtual keyboard driver (General > Login Items & Extensions > Driver Extensions, or Privacy & Security). Then choose Check Virtual Keyboard from the TypeThru menu."
+        sheet.addButton(withTitle: "Open System Settings")
+        sheet.addButton(withTitle: "Later")
+        guard sheet.runModal() == .alertFirstButtonReturn else { return }
+        // DECISION: driver approval moved to Login Items & Extensions in macOS 15.
+        let pane = ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: 15, minorVersion: 0, patchVersion: 0))
+            ? "com.apple.LoginItems-Settings.extension" : "com.apple.preference.security"
+        if let url = URL(string: "x-apple.systempreferences:\(pane)") { NSWorkspace.shared.open(url) }
     }
 
     @objc private func checkVirtualKeyboard() {
@@ -393,26 +438,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func uninstall() {
+        guard !busy else { NSSound.beep(); return }
         NSApp.activate(ignoringOtherApps: true)
         let sheet = NSAlert()
-        sheet.messageText = "Uninstall KeyTyper?"
-        sheet.informativeText = "Terminal will open, quit KeyTyper, and remove its background helper, settings, and Accessibility permission. It asks for your Mac administrator password, and asks before removing the Karabiner driver, which other apps may share. Delete KeyTyper.app afterwards."
+        sheet.messageText = "Uninstall TypeThru?"
+        sheet.informativeText = "This removes the background helper, TypeThru's settings, and its Accessibility permission, then quits TypeThru. macOS asks for your administrator password."
+        let driverInstalled = FileManager.default.fileExists(atPath: VirtualKeyboard.driverDirectory)
+        if driverInstalled {
+            sheet.showsSuppressionButton = true
+            sheet.suppressionButton?.title = "Also remove the Karabiner virtual keyboard driver"
+            sheet.suppressionButton?.state = .off
+            if FileManager.default.fileExists(atPath: "/Applications/Karabiner-Elements.app") {
+                sheet.informativeText += "\n\nKarabiner-Elements uses the same driver. Keep the driver unless you are also removing Karabiner-Elements."
+            }
+        }
         sheet.addButton(withTitle: "Uninstall")
         sheet.addButton(withTitle: "Cancel")
-        if sheet.runModal() == .alertFirstButtonReturn,
-           let url = Bundle.main.url(forResource: "Uninstall KeyTyper", withExtension: "command") {
-            NSWorkspace.shared.open(url)
+        guard sheet.runModal() == .alertFirstButtonReturn else { return }
+        let removeDriver = driverInstalled && sheet.suppressionButton?.state == .on
+        busy = true
+        statusItem.button?.title = "…"
+        DispatchQueue.global(qos: .userInitiated).async {
+            // The driver is deactivated as the user before root removes its files.
+            if removeDriver { VirtualKeyboard.runManager("deactivate") }
+            DispatchQueue.main.async { self.finishUninstall(removeDriver: removeDriver) }
         }
+    }
+
+    private func finishUninstall(removeDriver: Bool) {
+        let result = VirtualKeyboard.runAsAdministrator(
+            "uninstall-helper", [removeDriver ? "remove-driver" : "keep-driver"],
+            prompt: "TypeThru needs your password to remove its Virtual Keyboard helper.")
+        busy = false
+        statusItem.button?.title = ""
+        if case let .failed(reason) = result { alert("Uninstall did not finish", reason); return }
+        guard result == .done else { return }
+        UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? "local.keytyper")
+        let reset = Process()
+        reset.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        reset.arguments = ["reset", "Accessibility", Bundle.main.bundleIdentifier ?? "local.keytyper"]
+        var resetDone = false
+        if (try? reset.run()) != nil { reset.waitUntilExit(); resetDone = reset.terminationStatus == 0 }
+        alert("TypeThru is uninstalled", "Move TypeThru from Applications to the Trash to finish."
+              + (resetDone ? "" : " Also remove TypeThru from System Settings > Privacy & Security > Accessibility.")
+              + (removeDriver ? " Restart your Mac if the driver still appears in System Settings." : ""))
+        NSApp.terminate(nil)
     }
 
     @objc private func showDiagnostics() {
         let lastShortcut = lastHotKeyReceived.map { DateFormatter.localizedString(from: $0, dateStyle: .none, timeStyle: .medium) } ?? "Never received in this session"
-        alert("KeyTyper Diagnostics", "Accessibility: \(AXIsProcessTrusted() ? "granted" : "not granted")\nShortcut registration: \(hotKeyRegistrationStatus == noErr ? "OK" : "error \(hotKeyRegistrationStatus)")\nLast shortcut received: \(lastShortcut)\nSecure Event Input: \(IsSecureEventInputEnabled() ? "enabled" : "disabled")\nSelected: \(method.title)\n\n\(lastAttempt)\n\nSent events do not confirm that the remote session accepted them. Clipboard contents are not recorded. Secure Event Input is sampled on this Mac, not inside the remote session.")
+        alert("TypeThru Diagnostics", "Accessibility: \(AXIsProcessTrusted() ? "granted" : "not granted")\nShortcut registration: \(hotKeyRegistrationStatus == noErr ? "OK" : "error \(hotKeyRegistrationStatus)")\nLast shortcut received: \(lastShortcut)\nSecure Event Input: \(IsSecureEventInputEnabled() ? "enabled" : "disabled")\nSelected: \(method.title)\n\n\(lastAttempt)\n\nSent events do not confirm that the remote session accepted them. Clipboard contents are not recorded. Secure Event Input is sampled on this Mac, not inside the remote session.")
     }
 
     @objc private func checkPermission() {
         if AXIsProcessTrusted() {
-            alert("Permission granted", "KeyTyper can send key presses.")
+            alert("Permission granted", "TypeThru can send key presses.")
         } else {
             promptForAccessibility()
         }

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds KeyTyper.app next to this script.
+# Builds TypeThru.app next to this script.
 set -e
 cd "$(dirname "$0")"
 for tool in git clang++ swiftc codesign; do
@@ -8,7 +8,7 @@ for tool in git clang++ swiftc codesign; do
         exit 1
     }
 done
-APP=KeyTyper.app
+APP=TypeThru.app
 
 # A stable signing identity lets macOS keep the Accessibility permission across builds.
 # Any code signing certificate works: paid Developer ID, free Apple Development, or self-signed.
@@ -23,14 +23,19 @@ if [ -z "$IDENTITY" ]; then
     done
 fi
 IDENTITY=${IDENTITY:--}
+NAME=
 if [ "$IDENTITY" = - ]; then
     echo 'Signing: ad-hoc (macOS will ask for Accessibility again after each build)'
 else
     NAME=$(security find-identity -p codesigning 2>/dev/null | awk -v h="$IDENTITY" '$2 == h { sub(/^[^"]*/, ""); print; exit }')
     echo "Signing: ${NAME:-$IDENTITY}"
 fi
-# DECISION: --timestamp=none keeps builds offline; these builds are not notarized.
-sign() { codesign --force --timestamp=none --sign "$IDENTITY" "$@"; }
+# DECISION: --timestamp=none keeps local builds offline. Notarization (package.sh) needs a
+# Developer ID with a secure timestamp and the hardened runtime.
+case "$NAME" in
+    *'Developer ID Application:'*) sign() { codesign --force --timestamp --options runtime --sign "$IDENTITY" "$@"; } ;;
+    *) sign() { codesign --force --timestamp=none --sign "$IDENTITY" "$@"; } ;;
+esac
 
 REV=072fa83e824c1b633f508f60cbad87b41aab3047
 SOURCE=.build/virtualhid-source
@@ -42,25 +47,31 @@ if [ ! -d "$SOURCE/.git" ]; then
     git -C "$SOURCE" checkout --detach FETCH_HEAD
 fi
 [ "$(git -C "$SOURCE" rev-parse HEAD)" = "$REV" ] || { echo 'Unexpected virtual HID source revision'; exit 1; }
-clang++ -std=c++23 -O2 -Wall -Wextra -pthread -I "$SOURCE/include" -I "$SOURCE/vendor/vendor/include" \
+# DECISION: universal binaries, so one download runs on Apple silicon and Intel Macs.
+clang++ -std=c++23 -O2 -Wall -Wextra -pthread -arch arm64 -arch x86_64 -mmacosx-version-min=13.0 -I "$SOURCE/include" -I "$SOURCE/vendor/vendor/include" \
     helper/virtual-keyboard.cpp -o "$APP/Contents/Resources/KeyTyper-VirtualKeyboard"
 sign --identifier local.keytyper.virtual-keyboard "$APP/Contents/Resources/KeyTyper-VirtualKeyboard"
 "$APP/Contents/Resources/KeyTyper-VirtualKeyboard" --check-protocol
-rm -f "$APP/Contents/Resources/"*.command
-cp helper/*.command helper/install-helper.sh "$APP/Contents/Resources/"
+rm -f "$APP/Contents/Resources/"*.command "$APP/Contents/Resources/"*.sh
+cp helper/install-helper.sh helper/uninstall-helper.sh "$APP/Contents/Resources/"
 cp "$SOURCE/dist/Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg" "$APP/Contents/Resources/"
 cp "$SOURCE/LICENSE.md" "$APP/Contents/Resources/Karabiner-LICENSE.txt"
-swiftc -O -module-cache-path "$PWD/.build/module-cache" main.swift VirtualKeyboard.swift -o "$APP/Contents/MacOS/KeyTyper"
+for arch in arm64 x86_64; do
+    swiftc -O -target "$arch-apple-macos13.0" -module-cache-path "$PWD/.build/module-cache" \
+        main.swift VirtualKeyboard.swift -o ".build/TypeThru-$arch"
+done
+lipo -create .build/TypeThru-arm64 .build/TypeThru-x86_64 -output "$APP/Contents/MacOS/TypeThru"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key><string>local.keytyper</string>
-  <key>CFBundleName</key><string>KeyTyper</string>
-  <key>CFBundleExecutable</key><string>KeyTyper</string>
+  <key>CFBundleName</key><string>TypeThru</string>
+  <key>CFBundleExecutable</key><string>TypeThru</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1</string>
+  <key>CFBundleShortVersionString</key><string>0.2</string>
+  <key>CFBundleVersion</key><string>2</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
 </dict>
@@ -73,8 +84,8 @@ sign --identifier local.keytyper "$APP"
 LAST=$(cat .build/last-sign-identity 2>/dev/null || true)
 if [ "$IDENTITY" = - ] || [ "$IDENTITY" != "$LAST" ]; then
     tccutil reset Accessibility local.keytyper >/dev/null 2>&1 || true
-    echo 'Cleared the old Accessibility permission. Allow KeyTyper again when it asks.'
+    echo 'Cleared the old Accessibility permission. Allow TypeThru again when it asks.'
 fi
 printf '%s\n' "$IDENTITY" > .build/last-sign-identity
 echo "Built $(pwd)/$APP"
-pgrep -x KeyTyper >/dev/null && echo 'KeyTyper is still running the previous build. Quit and reopen it.' || true
+pgrep -x TypeThru >/dev/null && echo 'TypeThru is still running the previous build. Quit and reopen it.' || true

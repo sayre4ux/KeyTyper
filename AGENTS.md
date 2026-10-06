@@ -1,8 +1,8 @@
 # AGENTS.md
 
-Guidance for AI coding agents working on KeyTyper. Read this before changing code.
+Guidance for AI coding agents working on TypeThru. Read this before changing code.
 
-KeyTyper is a macOS menu bar app that types the clipboard as key presses into VDI and remote
+TypeThru is a macOS menu bar app that types the clipboard as key presses into VDI and remote
 desktop sessions where paste does not work. It is small (two Swift files, one C++ helper,
 a few shell scripts) and has no package manager or Xcode project.
 
@@ -13,21 +13,27 @@ a few shell scripts) and has no package manager or Xcode project.
 | `main.swift` | App: key map from the active layout, Quartz typing methods, global hotkey, menu, onboarding, diagnostics |
 | `VirtualKeyboard.swift` | Client for the root helper: macOS keycode → HID usage map, socket exchange, status |
 | `helper/virtual-keyboard.cpp` | Root helper (launch daemon). Validates packets and posts HID reports to the Karabiner virtual keyboard |
-| `helper/install-helper.sh` | Root-side install: driver package check/install, launch daemon |
-| `helper/*.command` | User-facing setup and uninstall, opened in Terminal from the app menu |
-| `build.sh` | Fetches the driver source at a pinned revision, builds and signs everything into `KeyTyper.app` |
+| `helper/install-helper.sh` | Root-side setup: driver package check/install, launch daemon |
+| `helper/uninstall-helper.sh` | Root-side uninstall: helper, and the driver when asked |
+| `build.sh` | Fetches the driver source at a pinned revision, builds and signs a universal `TypeThru.app` |
+| `package.sh` | Runs `build.sh` and makes the download disk image; notarizes it when configured |
 | `test.sh` | Compiles `main.swift` without its entry point and checks event construction |
 
-Git-ignored local state: `KeyTyper.app/`, `.build/` (driver source, module cache, last
+Internal identifiers keep the original name KeyTyper: bundle ID `local.keytyper`, the
+launch daemon label and socket `local.keytyper.virtual-keyboard`, the helper binary
+`KeyTyper-VirtualKeyboard`, and `KEYTYPER_SIGN_IDENTITY`. Renaming them would orphan existing
+installs and Accessibility permissions, so change them only together with a migration.
+
+Git-ignored local state: `TypeThru.app/`, `.build/` (driver source, module cache, last
 signing identity), `.autopilot/`, `DEVLOG.md`.
 
 ## Commands
 
 ```sh
 ./test.sh                                                  # unit checks; posts no input
-./build.sh                                                 # builds KeyTyper.app
-KeyTyper.app/Contents/MacOS/KeyTyper --print-map 'text'    # keys a text would use; types nothing
-KeyTyper.app/Contents/Resources/KeyTyper-VirtualKeyboard --check-protocol   # helper packet validation
+./build.sh                                                 # builds TypeThru.app
+TypeThru.app/Contents/MacOS/TypeThru --print-map 'text'    # keys a text would use; types nothing
+TypeThru.app/Contents/Resources/KeyTyper-VirtualKeyboard --check-protocol   # helper packet validation
 ```
 
 Run `./test.sh` and `./build.sh` after every code change. Both must pass.
@@ -37,12 +43,14 @@ Run `./test.sh` and `./build.sh` after every code change. Both must pass.
 - **Never post real keyboard input.** Do not trigger typing, run the menu tests, or send
   press packets to the helper. Tests construct events and inspect them; they never post.
   The readiness probe (packet `1,0,0,0,0,0,0,0`) is the only packet that is safe to send.
-- **Never run the setup or uninstall scripts, or anything with `sudo`.** They change system
-  state and need the user's administrator password. Ask the user to run them.
+- **Never run setup or uninstall (the menu items or the `helper/*.sh` scripts), or anything
+  with `sudo`.** They change system state and need the user's administrator password. The
+  app runs the scripts through the macOS password prompt (`VirtualKeyboard.runAsAdministrator`).
 - **Never commit personal signing data**: certificate names, hashes, team IDs, or email
   addresses. `build.sh` reads the identity from the keychain at build time and stores it
-  only in `.build/`. Signed app bundles contain the signer's identity, so do not commit or
-  publish built apps.
+  only in `.build/`. Signed app bundles contain the signer's identity, so never commit built
+  apps. Publish only disk images made by `package.sh`, signed ad-hoc or with the project's
+  Developer ID, and only when the user asks.
 - **Do not name specific VDI or remote desktop vendors** in the UI or docs. Say "VDI and
   remote desktops".
 - Do not add `rm -rf` to scripts; delete specific files instead.
@@ -108,12 +116,13 @@ apps (such as Karabiner-Elements) may depend on it.
 Agents can verify: `./test.sh`, `./build.sh`, `--print-map`, `--check-protocol`, and
 `VirtualKeyboard.status()` via the readiness probe.
 
-Only the user can verify: real typing into a remote session, the setup and uninstall
-scripts, system extension approval, and the first-run onboarding. When a change affects
+Only the user can verify: real typing into a remote session, setup and uninstall, system
+extension approval, the first-run onboarding, and installing from the disk image (Gatekeeper's
+Open Anyway, the move-to-Applications check). When a change affects
 these, list the exact manual steps for the user instead of claiming it works.
 
-Untested so far: RDP and VDI clients other than the one used during development, and
-signing with a self-signed certificate.
+Untested so far: RDP and VDI clients other than the one used during development, signing
+with a self-signed certificate or Developer ID, notarization, and the Intel build.
 
 ## Style
 

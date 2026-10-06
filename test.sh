@@ -65,7 +65,9 @@ for (interval, hold, gap) in [(0.24, 80, 160), (0.12, 60, 60), (0.02, 10, 10), (
     let t = VirtualKeyboard.timing(for: interval)
     check(t.hold == UInt16(hold) && t.gap == UInt16(gap), "virtual keyboard timing \(interval)")
 }
-print("PASS: four modes, event pairing, Shift release, pacing, control keys, unsupported input, symbol replacement, speed timing, and Unicode round trips. No events posted.")
+check(VirtualKeyboard.shellQuoted("/A b/it's") == "'/A b/it'\\''s'", "shell quoting")
+check(VirtualKeyboard.appleScriptQuoted("say \"hi\" \\ x") == "\"say \\\"hi\\\" \\\\ x\"", "AppleScript quoting")
+print("PASS: four modes, event pairing, Shift release, pacing, control keys, unsupported input, symbol replacement, speed timing, admin prompt quoting, and Unicode round trips. No events posted.")
 SWIFT
 swiftc -module-cache-path "$TEST_DIR/module-cache" "$TEST_DIR/main.swift" -o "$TEST_DIR/tests"
 "$TEST_DIR/tests"

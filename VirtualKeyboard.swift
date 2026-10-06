@@ -15,6 +15,41 @@ enum VirtualKeyboard {
     ]
     static let socketPath = "/var/run/local.keytyper.virtual-keyboard.sock"
     static let daemonPlist = "/Library/LaunchDaemons/local.keytyper.virtual-keyboard.plist"
+    static let driverDirectory = "/Library/Application Support/org.pqrs/Karabiner-DriverKit-VirtualHIDDevice"
+    static let manager = "/Applications/.Karabiner-VirtualHIDDevice-Manager.app/Contents/MacOS/Karabiner-VirtualHIDDevice-Manager"
+
+    enum AdminResult: Equatable { case done, cancelled, failed(String) }
+
+    /// Runs a bundled root script behind the standard macOS administrator password prompt.
+    /// NSAppleScript is not thread-safe, so call this on the main thread.
+    static func runAsAdministrator(_ script: String, _ arguments: [String], prompt: String) -> AdminResult {
+        guard let path = Bundle.main.path(forResource: script, ofType: "sh") else {
+            return .failed("\(script).sh is missing from the app. Download TypeThru again.")
+        }
+        let command = (["/bin/bash", path] + arguments).map(shellQuoted).joined(separator: " ")
+        let source = "do shell script \(appleScriptQuoted(command)) with prompt \(appleScriptQuoted(prompt)) with administrator privileges"
+        var error: NSDictionary?
+        _ = NSAppleScript(source: source)?.executeAndReturnError(&error)
+        guard let error else { return .done }
+        if error[NSAppleScript.errorNumber] as? Int == -128 { return .cancelled }
+        return .failed(error[NSAppleScript.errorMessage] as? String ?? "Unknown error.")
+    }
+
+    static func shellQuoted(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+
+    static func appleScriptQuoted(_ text: String) -> String {
+        "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
+
+    /// Asks the Karabiner manager to activate or deactivate the driver as the current user. Blocks.
+    static func runManager(_ action: String) {
+        guard FileManager.default.isExecutableFile(atPath: manager) else { return }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: manager)
+        process.arguments = [action]
+        guard (try? process.run()) != nil else { return }
+        process.waitUntilExit()
+    }
 
     enum Status {
         case ready, notInstalled, notResponding, driverNotReady
@@ -33,9 +68,9 @@ enum VirtualKeyboard {
             case .ready:
                 return "Use Control+\\ or Type Clipboard to type. For a first test, choose Test abc123 in 3 seconds, then click the text field in your remote session."
             case .notInstalled:
-                return "Choose Set Up Virtual Keyboard… from the KeyTyper menu."
+                return "Choose Set Up Virtual Keyboard… from the TypeThru menu."
             case .notResponding:
-                return "The helper is installed but did not answer. Wait a few seconds and check again. If this continues, run Set Up Virtual Keyboard… again."
+                return "The helper is installed but did not answer. Wait a few seconds and check again. If this continues, choose Set Up Virtual Keyboard… again."
             case .driverNotReady:
                 return "The helper is running, but the Karabiner virtual keyboard driver is not active. Approve its system extension in System Settings (Privacy & Security, or General > Login Items & Extensions > Driver Extensions), then check again. Restart only if macOS asks."
             }

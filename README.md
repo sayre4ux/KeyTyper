@@ -1,4 +1,4 @@
-# KeyTyper
+# TypeThru
 
 A macOS menu bar app that types your clipboard as key presses, for VDI and remote desktop
 sessions where paste does not work. Press **Control+\\** to type the clipboard into whatever
@@ -18,16 +18,26 @@ clients are untested; reports are welcome.
 
 ## Install
 
-Requires macOS 13 or later and the Xcode Command Line Tools (`xcode-select --install`). The
-first build downloads the virtual keyboard driver source, so it needs internet access.
+Requires macOS 13 or later, on Apple silicon or Intel.
 
-1. Run `./build.sh`, then open `KeyTyper.app`. A keyboard icon appears in the menu bar.
-2. Allow KeyTyper in **System Settings > Privacy & Security > Accessibility**.
-3. When KeyTyper offers Virtual Keyboard setup, choose **Run Setup** and enter your
-   administrator password in Terminal.
-4. If macOS asks, approve the Karabiner system extension in System Settings.
-5. Choose **Check Virtual Keyboard** from the menu. It should report ready.
-6. Choose **Test abc123 in 3 seconds** and click a text field in the remote session.
+1. Download `TypeThru-<version>.dmg` from
+   [Releases](https://github.com/sayre4ux/KeyTyper/releases) and open it.
+2. Drag **TypeThru** into **Applications**, eject the disk, and open TypeThru from
+   Applications. A keyboard icon appears in the menu bar.
+3. The beta is not notarized yet. If macOS says it cannot verify TypeThru, open
+   **System Settings > Privacy & Security**, scroll down, and choose **Open Anyway**. This is
+   needed once.
+4. Allow TypeThru in **System Settings > Privacy & Security > Accessibility** when asked.
+5. When TypeThru offers Virtual Keyboard setup, choose **Set Up** and enter your administrator
+   password.
+6. If macOS asks, allow the Karabiner driver in System Settings.
+7. Choose **Test abc123 in 3 seconds** and click a text field in the remote session.
+
+### Build from source
+
+Requires the Xcode Command Line Tools (`xcode-select --install`). The first build downloads
+the virtual keyboard driver source, so it needs internet access. Run `./build.sh` to build
+`TypeThru.app`, or `./package.sh` to build the disk image.
 
 ## Use
 
@@ -43,7 +53,7 @@ typists to *Unrealistic (600 WPM)*. If characters are dropped, choose a slower s
 
 Symbols with no key on your layout, such as bullets, smart quotes, dashes, and `…`, are
 typed as the closest plain keys (`•` becomes `-`, `“` becomes `"`). Turn off **Replace
-Symbols Without a Key** when the text must match exactly. KeyTyper types nothing if the text
+Symbols Without a Key** when the text must match exactly. TypeThru types nothing if the text
 still contains a character with no key.
 
 ## Troubleshooting
@@ -62,23 +72,26 @@ in front, and why typing stopped.
 
 ## Uninstall
 
-Choose **Uninstall KeyTyper…** from the menu. It removes the helper, settings, and the
-Accessibility entry, and asks before removing the Karabiner driver. Keep the driver if
-another app, such as Karabiner-Elements, uses it. Then delete `KeyTyper.app`.
+Choose **Uninstall TypeThru…** from the menu and enter your administrator password. It removes
+the helper, settings, and the Accessibility entry, then quits. Tick **Also remove the Karabiner
+virtual keyboard driver** only if no other app, such as Karabiner-Elements, uses it. Then move
+TypeThru from Applications to the Trash.
 
 ## Privacy and security
 
-KeyTyper sends key presses. It does not record them.
+TypeThru sends key presses. It does not record them.
 
 - No event tap and no Input Monitoring permission. It only checks whether Esc, the modifier
   keys, and the shortcut key are held down at that moment.
-- The clipboard is read only when you ask KeyTyper to type, and is never saved or logged.
+- The clipboard is read only when you ask TypeThru to type, and is never saved or logged.
 - No network access. Only `build.sh` downloads the driver source.
 - Virtual Keyboard adds a background helper that runs as root, because the driver accepts
   only root clients. It listens on a local socket that only your user account can open,
   accepts one fixed 8-byte key report at a time, and cannot read keyboard input.
 - Any program running as your user can ask the helper to press keys. Uninstall when you no
   longer need it.
+- Setup and uninstall run scripts bundled in the app as root, after you enter your password
+  in the standard macOS prompt.
 - Setup verifies the driver package signature and will not replace a different installed
   driver version.
 
@@ -100,10 +113,12 @@ clears the stale entry and macOS asks again after each build. A self-signed Code
 certificate from Keychain Access also works:
 
 ```sh
-KEYTYPER_SIGN_IDENTITY='KeyTyper Local' ./build.sh
+KEYTYPER_SIGN_IDENTITY='TypeThru Local' ./build.sh
 ```
 
-Builds are not notarized and are meant for your own Mac.
+Release disk images are ad-hoc signed and not notarized during the beta. With a Developer ID
+certificate, `package.sh` signs with the hardened runtime, and notarizes the disk image when
+`KEYTYPER_NOTARY_PROFILE` names a `notarytool` keychain profile.
 
 ## Contributing
 
