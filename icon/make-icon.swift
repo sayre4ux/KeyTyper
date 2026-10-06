@@ -92,6 +92,33 @@ func render(_ size: Int) -> Data {
     return rep.representation(using: .png, properties: [:])!
 }
 
+/// README logo: the icon and the name, with text colour for a light or dark page.
+func logo(text: NSColor) -> Data {
+    let font = NSFont(name: "AvenirNext-DemiBold", size: 132) ?? .boldSystemFont(ofSize: 132)
+    let name = NSMutableAttributedString(string: "Type", attributes: [.font: font, .foregroundColor: text, .kern: -2])
+    name.append(NSAttributedString(string: "Thru", attributes: [.font: font, .foregroundColor: NSColor(red: 0.42, green: 0.58, blue: 1, alpha: 1), .kern: -2]))
+    let size = name.size()
+    let height = 240, width = height + 48 + Int(size.width.rounded(.up)) + 8
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8,
+                               samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                               colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    let icon = NSImage(data: render(1024))!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    // The tile fills 824 of 1024 points, so draw the icon slightly larger than the logo height.
+    let side = CGFloat(height) * 1024 / 824
+    icon.draw(in: NSRect(x: -(side - CGFloat(height)) / 2, y: -(side - CGFloat(height)) / 2, width: side, height: side))
+    name.draw(at: NSPoint(x: CGFloat(height) + 48, y: (CGFloat(height) - size.height) / 2))
+    NSGraphicsContext.restoreGraphicsState()
+    return rep.representation(using: .png, properties: [:])!
+}
+
+if CommandLine.arguments.count > 2 {
+    let docs = URL(fileURLWithPath: CommandLine.arguments[2])
+    try logo(text: NSColor(white: 0.08, alpha: 1)).write(to: docs.appendingPathComponent("logo-light.png"))
+    try logo(text: .white).write(to: docs.appendingPathComponent("logo-dark.png"))
+}
+
 try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
 for points in [16, 32, 128, 256, 512] {
     for scale in [1, 2] {

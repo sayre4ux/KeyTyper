@@ -14,7 +14,7 @@ a few shell scripts) and has no package manager or Xcode project.
 | `Panel.swift` | Menu bar panel (SwiftUI, Liquid Glass on macOS 26+). A non-activating panel, so the target app stays in front |
 | `Brand.swift` | The TypeThru mark, shared by the menu bar icon and the app icon |
 | `icon/` | `make-icon.sh` redraws `AppIcon.icns` from `make-icon.swift`; rerun it after changing the mark |
-| `docs/` | README images: the app icon and a panel screenshot. Update them when the icon or panel changes |
+| `docs/` | README images: logos (made by `icon/make-icon.sh`) and a panel screenshot. Update them when the icon or panel changes |
 | `VirtualKeyboard.swift` | Client for the root helper: macOS keycode → HID usage map, socket exchange, status |
 | `helper/virtual-keyboard.cpp` | Root helper (launch daemon). Validates packets and posts HID reports to the Karabiner virtual keyboard |
 | `helper/install-helper.sh` | Root-side setup: driver package check/install, launch daemon |
@@ -106,7 +106,7 @@ apps (such as Karabiner-Elements) may depend on it.
   Windows menu bar and swallows the typed text; Command may map to the Windows key; Shift
   combined with Ctrl or Alt can switch the keyboard layout. The key itself must not be a
   common Windows shortcut, because the global hotkey hides it from the remote app.
-- **The README's "Privacy and security" section is a contract.** No event taps, no Input
+- **The README's "Privacy" section is a contract.** No event taps, no Input
   Monitoring, no network access at runtime, no clipboard persistence or logging, and a
   helper that can only send keys. If a change would break any of these, stop and ask. If a
   change alters what the app can see or do, update that section in the same change. Avoid
@@ -117,6 +117,20 @@ apps (such as Karabiner-Elements) may depend on it.
   remove that reset or the identity selection.
 - **Accessibility is required for every method**, including Virtual Keyboard, because
   Esc-to-stop reads key state. Relaxing this needs testing without the permission first.
+
+## Signing and releases
+
+macOS ties Accessibility to the signature. `build.sh` uses the first it finds:
+`TYPETHRU_SIGN_IDENTITY` (a certificate name or hash; `-` forces ad-hoc), a Developer ID
+Application certificate, an Apple Development certificate, then ad-hoc. With a certificate the
+permission survives rebuilds; ad-hoc builds reset it, including for the copy in Applications,
+because both share the bundle ID. A self-signed certificate also works:
+`TYPETHRU_SIGN_IDENTITY='TypeThru Local' ./build.sh`.
+
+`./package.sh` builds `TypeThru-<version>.dmg`. With a Developer ID it signs with the hardened
+runtime and notarizes when `TYPETHRU_NOTARY_PROFILE` names a `notarytool` keychain profile.
+Releases are GitHub pre-releases with the DMG attached; bump the version in `build.sh` first.
+The README keeps user steps short; put detail for contributors here.
 
 ## Verifying changes
 
