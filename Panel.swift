@@ -202,10 +202,6 @@ final class PanelController {
 
     var isShown: Bool { panel?.isVisible == true }
 
-    func toggle(below button: NSStatusBarButton) {
-        if isShown { close() } else { show(below: button) }
-    }
-
     func show(below button: NSStatusBarButton) {
         let host = NSHostingView(rootView: PanelView(model: model))
         host.frame.size = host.fittingSize

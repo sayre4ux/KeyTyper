@@ -1,6 +1,19 @@
-TypeThru.app/
-TypeThru-*.dmg
+# Build output
+/TypeThru.app/
+/*.dmg
+/.build/
+*.iconset/
+
+# Local notes and tools
+/DEVLOG.md
+/.autopilot/
+/CLAUDE.local.md
+/.claude/settings.local.json
+
+# macOS and editors
 .DS_Store
-.build/
-.autopilot/
-DEVLOG.md
+._*
+.vscode/
+.idea/
+*.swp
+*~
