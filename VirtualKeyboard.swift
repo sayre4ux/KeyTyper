@@ -66,7 +66,7 @@ enum VirtualKeyboard {
         var help: String {
             switch self {
             case .ready:
-                return "Use Control+\\ or Type Clipboard to type. For a first test, choose the Short typing test in the TypeThru panel, then click the text field in your remote session."
+                return "Use your shortcut or Type Clipboard to type. For a first test, choose the Short typing test in the TypeThru panel, then click the text field in your remote session."
             case .notInstalled:
                 return "Click the TypeThru icon in the menu bar and choose Set Up Virtual Keyboard…."
             case .notResponding:

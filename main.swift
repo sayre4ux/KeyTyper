@@ -313,41 +313,134 @@ func waitForModifierRelease(timeout: TimeInterval = 3, includeTriggerKey: Bool =
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
         let modifiersUp = CGEventSource.flagsState(.hidSystemState).intersection(held).isEmpty
-        let triggerUp = !includeTriggerKey || !CGEventSource.keyState(.hidSystemState, key: CGKeyCode(hotKeyCode))
+        let triggerUp = !includeTriggerKey || !CGEventSource.keyState(.hidSystemState, key: CGKeyCode(currentShortcut.keyCode))
         if modifiersUp && triggerUp { return true }
         Thread.sleep(forTimeInterval: 0.02)
     }
     return false
 }
 
-// MARK: - Global hotkey (Control+Backslash)
+// MARK: - Global hotkey
 
-// DECISION: Control+Backslash. The hotkey consumes its key but not its modifiers, which still
-// reach the remote session: on Windows a lone Alt opens the menu bar, and Command may map to the
-// Windows key. Control alone is harmless there, and Windows apps rarely use Ctrl+\.
-let hotKeyCode = UInt32(kVK_ANSI_Backslash)
-let hotKeyModifiers = UInt32(controlKey)
+/// A global shortcut: a macOS key code and Carbon modifier flags.
+struct Shortcut: Equatable {
+    var keyCode: UInt32
+    var modifiers: UInt32
+
+    // DECISION: Control+Backslash by default. The hotkey consumes its key but not its modifiers,
+    // which still reach the remote session: on Windows a lone Alt opens the menu bar, and Command
+    // may map to the Windows key. Control alone is harmless there, and Windows apps rarely use Ctrl+\.
+    static let standard = Shortcut(keyCode: UInt32(kVK_ANSI_Backslash), modifiers: UInt32(controlKey))
+
+    static let functionKeys: [Int: String] = [
+        kVK_F1: "F1", kVK_F2: "F2", kVK_F3: "F3", kVK_F4: "F4", kVK_F5: "F5", kVK_F6: "F6", kVK_F7: "F7",
+        kVK_F8: "F8", kVK_F9: "F9", kVK_F10: "F10", kVK_F11: "F11", kVK_F12: "F12", kVK_F13: "F13",
+        kVK_F14: "F14", kVK_F15: "F15", kVK_F16: "F16", kVK_F17: "F17", kVK_F18: "F18", kVK_F19: "F19", kVK_F20: "F20",
+    ]
+    static let namedKeys: [Int: String] = [
+        kVK_Return: "↩", kVK_Tab: "⇥", kVK_Space: "Space", kVK_Delete: "⌫", kVK_ForwardDelete: "⌦",
+        kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑", kVK_DownArrow: "↓",
+        kVK_Home: "↖", kVK_End: "↘", kVK_PageUp: "⇞", kVK_PageDown: "⇟",
+    ]
+
+    init(keyCode: UInt32, modifiers: UInt32) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+    }
+
+    init(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
+        var modifiers: UInt32 = 0
+        if flags.contains(.control) { modifiers |= UInt32(controlKey) }
+        if flags.contains(.option) { modifiers |= UInt32(optionKey) }
+        if flags.contains(.shift) { modifiers |= UInt32(shiftKey) }
+        if flags.contains(.command) { modifiers |= UInt32(cmdKey) }
+        self.init(keyCode: UInt32(keyCode), modifiers: modifiers)
+    }
+
+    static func load() -> Shortcut {
+        let defaults = UserDefaults.standard
+        guard let key = defaults.object(forKey: "shortcutKey") as? Int,
+              let modifiers = defaults.object(forKey: "shortcutModifiers") as? Int else { return .standard }
+        let shortcut = Shortcut(keyCode: UInt32(key), modifiers: UInt32(modifiers))
+        return shortcut.problem == nil ? shortcut : .standard
+    }
+
+    func save() {
+        UserDefaults.standard.set(Int(keyCode), forKey: "shortcutKey")
+        UserDefaults.standard.set(Int(modifiers), forKey: "shortcutModifiers")
+    }
+
+    private func has(_ flag: Int) -> Bool { modifiers & UInt32(flag) != 0 }
+
+    var isFunctionKey: Bool { Shortcut.functionKeys[Int(keyCode)] != nil }
+
+    /// Why this cannot be the shortcut, or nil when it can.
+    var problem: String? {
+        if Int(keyCode) == kVK_Escape { return "Esc stops typing, so it cannot start it." }
+        if !isFunctionKey && !has(controlKey) && !has(optionKey) && !has(cmdKey) {
+            return "Add Control, Option, or Command, or use a function key such as F13."
+        }
+        return nil
+    }
+
+    /// A warning for shortcuts that work but may misbehave in a remote session.
+    var caution: String? {
+        guard has(optionKey) || has(cmdKey) || has(shiftKey) else { return nil }
+        return "Option, Command, and Shift also reach the remote session and can trigger Windows shortcuts. Control alone is safest."
+    }
+
+    var title: String {
+        var text = ""
+        if has(controlKey) { text += "⌃" }
+        if has(optionKey) { text += "⌥" }
+        if has(shiftKey) { text += "⇧" }
+        if has(cmdKey) { text += "⌘" }
+        return text + keyName
+    }
+
+    /// The key's label on the current layout, so ⌃\ reads correctly on non-US keyboards too.
+    var keyName: String {
+        if let name = Shortcut.functionKeys[Int(keyCode)] ?? Shortcut.namedKeys[Int(keyCode)] { return name }
+        let character = buildKeyMap().first { $0.value.keyCode == CGKeyCode(keyCode) && !$0.value.shift }?.key
+        return character.map { String($0).uppercased() } ?? "Key \(keyCode)"
+    }
+}
+
+var currentShortcut = Shortcut.standard
 var onHotKey: (() -> Void)?
 var hotKeyRef: EventHotKeyRef?
+var hotKeyHandlerInstalled = false
 var hotKeyRegistrationStatus: OSStatus = OSStatus(eventNotHandledErr)
 var lastHotKeyReceived: Date?
 
-func registerHotKey() -> Bool {
-    // Start on release, so the remote client has a chance to receive the physical key-up
-    // sequence before the virtual keyboard begins a new sequence.
-    var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))
-    let handlerStatus = InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-        lastHotKeyReceived = Date()
-        onHotKey?()
-        return noErr
-    }, 1, &spec, nil, nil)
-    guard handlerStatus == noErr else {
-        hotKeyRegistrationStatus = handlerStatus
-        return false
+/// Registers `shortcut` as the global hotkey, replacing the current one. Returns false if
+/// macOS refuses it; then nothing is registered.
+func registerHotKey(_ shortcut: Shortcut) -> Bool {
+    if !hotKeyHandlerInstalled {
+        // Start on release, so the remote client has a chance to receive the physical key-up
+        // sequence before the virtual keyboard begins a new sequence.
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))
+        let handlerStatus = InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
+            lastHotKeyReceived = Date()
+            onHotKey?()
+            return noErr
+        }, 1, &spec, nil, nil)
+        guard handlerStatus == noErr else {
+            hotKeyRegistrationStatus = handlerStatus
+            return false
+        }
+        hotKeyHandlerInstalled = true
     }
+    unregisterHotKey()
     let id = EventHotKeyID(signature: OSType(0x4B545950), id: 1) // "KTYP"
-    hotKeyRegistrationStatus = RegisterEventHotKey(hotKeyCode, hotKeyModifiers, id, GetApplicationEventTarget(), 0, &hotKeyRef)
+    hotKeyRegistrationStatus = RegisterEventHotKey(shortcut.keyCode, shortcut.modifiers, id, GetApplicationEventTarget(), 0, &hotKeyRef)
+    if hotKeyRegistrationStatus == noErr { currentShortcut = shortcut }
     return hotKeyRegistrationStatus == noErr
+}
+
+func unregisterHotKey() {
+    if let ref = hotKeyRef { UnregisterEventHotKey(ref) }
+    hotKeyRef = nil
 }
 
 // MARK: - Menu bar app
@@ -362,6 +455,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "typingMethodV2") }
     }
     private let panel = PanelController()
+    private var shortcutRecorder: Any?
     private var panelClosedAt = Date.distantPast
     // DECISION: time per character at 5 characters per word. A study of 168,000 typists
     // averaged 52 WPM and its fastest reached about 120; sprint records are 200 to 300 WPM.
@@ -399,8 +493,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         migrateFromKeyTyper()
 
         onHotKey = { [weak self] in self?.trigger(fromMenu: false) }
-        if !registerHotKey() {
-            alert("Could not register ⌃\\", "macOS returned error \(hotKeyRegistrationStatus). The shortcut may be in use by another app. Click the TypeThru icon in the menu bar and choose Type Clipboard instead.")
+        let shortcut = Shortcut.load()
+        if !registerHotKey(shortcut) {
+            alert("Could not use \(shortcut.title)", "macOS returned error \(hotKeyRegistrationStatus). Another app may use this shortcut. Click the TypeThru icon in the menu bar to choose a different one.")
         }
         if !AXIsProcessTrusted() { promptForAccessibility() }
         continueOnboarding()
@@ -477,7 +572,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.replaceSymbols = replaceSymbols
         model.shiftReturn = shiftReturn
         model.busy = busy
-        panel.onClose = { [weak self] in self?.panelClosedAt = Date() }
+        model.shortcut = currentShortcut.title
+        model.shortcutIsStandard = currentShortcut == .standard
+        model.shortcutNote = nil
+        panel.onClose = { [weak self] in
+            self?.panelClosedAt = Date()
+            if self?.shortcutRecorder != nil { self?.finishRecording(nil) }
+        }
         panel.show(below: button)
         refreshStatus()
     }
@@ -496,6 +597,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Records the next key press in the panel as the shortcut. Only TypeThru's own panel sees it;
+    /// the hotkey is off meanwhile, so pressing the old shortcut does not start typing.
+    private func startRecording() {
+        unregisterHotKey()
+        panel.model.recording = true
+        panel.model.shortcutNote = "Press the new shortcut. Esc cancels."
+        shortcutRecorder = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.record(event)
+            return nil
+        }
+    }
+
+    private func record(_ event: NSEvent) {
+        let held = event.modifierFlags.intersection([.control, .option, .shift, .command])
+        if Int(event.keyCode) == kVK_Escape && held.isEmpty { finishRecording(nil); return }
+        let shortcut = Shortcut(keyCode: event.keyCode, flags: held)
+        if let problem = shortcut.problem { panel.model.shortcutNote = problem; return }
+        finishRecording(shortcut)
+    }
+
+    private func finishRecording(_ shortcut: Shortcut?) {
+        if let recorder = shortcutRecorder { NSEvent.removeMonitor(recorder) }
+        shortcutRecorder = nil
+        panel.model.recording = false
+        if let shortcut { apply(shortcut) } else { _ = registerHotKey(currentShortcut); panel.model.shortcutNote = nil }
+    }
+
+    private func apply(_ shortcut: Shortcut) {
+        let previous = currentShortcut
+        if registerHotKey(shortcut) {
+            shortcut.save()
+            panel.model.shortcutNote = shortcut.caution
+        } else {
+            _ = registerHotKey(previous)
+            panel.model.shortcutNote = "macOS did not accept \(shortcut.title). Another app may use it."
+        }
+        panel.model.shortcut = currentShortcut.title
+        panel.model.shortcutIsStandard = currentShortcut == .standard
+    }
+
     private func setBusy(_ value: Bool) {
         busy = value
         panel.model.busy = value
@@ -503,8 +644,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func perform(_ action: PanelAction) {
-        panel.close()
+        if !action.keepsPanelOpen { panel.close() }
         switch action {
+        case .recordShortcut: if shortcutRecorder == nil { startRecording() } else { finishRecording(nil) }
+        case .resetShortcut: apply(.standard)
         case .typeClipboard: trigger(fromMenu: true)
         case .test(let test): trigger(fromMenu: true, test: test)
         case .setUp: setupVirtualKeyboard()
@@ -615,7 +758,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showDiagnostics() {
         let lastShortcut = lastHotKeyReceived.map { DateFormatter.localizedString(from: $0, dateStyle: .none, timeStyle: .medium) } ?? "Never received in this session"
-        alert("TypeThru Diagnostics", "Accessibility: \(AXIsProcessTrusted() ? "granted" : "not granted")\nShortcut registration: \(hotKeyRegistrationStatus == noErr ? "OK" : "error \(hotKeyRegistrationStatus)")\nLast shortcut received: \(lastShortcut)\nSecure Event Input: \(IsSecureEventInputEnabled() ? "enabled" : "disabled")\nSelected: \(method.title)\n\n\(lastAttempt)\n\nSent events do not confirm that the remote session accepted them. Clipboard contents are not recorded. Secure Event Input is sampled on this Mac, not inside the remote session.")
+        alert("TypeThru Diagnostics", "Accessibility: \(AXIsProcessTrusted() ? "granted" : "not granted")\nShortcut: \(currentShortcut.title), \(hotKeyRegistrationStatus == noErr ? "registered" : "error \(hotKeyRegistrationStatus)")\nLast shortcut received: \(lastShortcut)\nSecure Event Input: \(IsSecureEventInputEnabled() ? "enabled" : "disabled")\nSelected: \(method.title)\n\n\(lastAttempt)\n\nSent events do not confirm that the remote session accepted them. Clipboard contents are not recorded. Secure Event Input is sampled on this Mac, not inside the remote session.")
     }
 
     @objc private func checkPermission() {

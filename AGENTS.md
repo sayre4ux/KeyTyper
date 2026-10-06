@@ -62,7 +62,10 @@ Run `./test.sh` and `./build.sh` after every code change. Both must pass.
 
 ## Architecture
 
-**Trigger.** A Carbon hotkey (Control+\) fires on key release. The app waits until all
+**Trigger.** A Carbon hotkey fires on key release. It is `Shortcut.standard` (Control+\)
+unless the user records another in the panel (`Shortcut`, saved as `shortcutKey` and
+`shortcutModifiers`); recording uses a local key monitor on the panel only, with the hotkey
+unregistered meanwhile. The app waits until all
 modifiers and the hotkey key are up, then types into the app that was in front when the
 shortcut was pressed. `StopWatcher` polls every 10 ms while typing and stops on Esc, a new
 mouse click, or a change of front app or front window (Accessibility). Return can be typed as
@@ -101,7 +104,9 @@ apps (such as Karabiner-Elements) may depend on it.
 
 ## Design rules and why
 
-- **The shortcut uses Control as its only modifier.** The hotkey consumes its key but not
+- **The default shortcut uses Control as its only modifier.** Users may choose others; the
+  panel warns about Option, Command, and Shift, and refuses Esc and keys with no modifier
+  except F1–F20. The hotkey consumes its key but not
   its modifiers, and those still reach the remote session. A lone Alt (Option) opens the
   Windows menu bar and swallows the typed text; Command may map to the Windows key; Shift
   combined with Ctrl or Alt can switch the keyboard layout. The key itself must not be a

@@ -41,7 +41,9 @@ Upgrading from KeyTyper? Delete the old app and run **Set Up** once.
 2. Click a text field in the remote session.
 3. Press **Control+\\**.
 
-Click the menu bar icon to change the speed, run a typing test, or turn options off.
+Click the menu bar icon to change the shortcut or speed, run a typing test, or turn options
+off. Control alone is the safest shortcut, because other modifier keys also reach the remote
+session.
 
 ## Troubleshooting
 
@@ -56,6 +58,8 @@ Click the menu bar icon to change the speed, run a typing test, or turn options 
 - No event tap and no Input Monitoring. It only checks whether Esc, the modifier keys, the
   shortcut key, or a mouse button is held down, and while typing, which app and window are in
   front.
+- When you change the shortcut, the panel reads only the keys you press in it, until you
+  choose one.
 - The clipboard is read only when you ask it to type, and is never saved or logged.
 - No network access.
 - The virtual keyboard helper runs as root because the driver requires it. It accepts key

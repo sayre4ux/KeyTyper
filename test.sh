@@ -175,6 +175,26 @@ section("Line breaks as Shift+Return") {
     check(separators.text == "a\nb\nc\nd" && shifted["\n"]?.shift == true, "other line breaks become Shift+Return")
 }
 
+section("Custom shortcut") {
+    let standard = Shortcut.standard
+    check(standard.problem == nil && standard.caution == nil, "Control+Backslash is allowed without a warning")
+    check(standard.title.hasPrefix("⌃") && standard.title.count == 2, "default title is ⌃ and one key")
+    check(Shortcut(keyCode: UInt32(kVK_Escape), modifiers: UInt32(controlKey)).problem != nil, "Esc is refused")
+    check(Shortcut(keyCode: UInt32(kVK_ANSI_A), modifiers: 0).problem != nil, "a plain letter is refused")
+    check(Shortcut(keyCode: UInt32(kVK_ANSI_A), modifiers: UInt32(shiftKey)).problem != nil, "Shift alone is refused")
+    check(Shortcut(keyCode: UInt32(kVK_F13), modifiers: 0).problem == nil, "a function key alone is allowed")
+    for flag in [optionKey, cmdKey] {
+        let shortcut = Shortcut(keyCode: UInt32(kVK_ANSI_K), modifiers: UInt32(flag))
+        check(shortcut.problem == nil && shortcut.caution != nil, "Option or Command works, with a warning")
+    }
+    check(Shortcut(keyCode: UInt32(kVK_ANSI_K), modifiers: UInt32(controlKey | shiftKey)).caution != nil, "Shift adds a warning")
+    let all = Shortcut(keyCode: UInt32(kVK_F5), modifiers: UInt32(controlKey | optionKey | shiftKey | cmdKey))
+    check(all.title == "⌃⌥⇧⌘F5", "modifier order in the title")
+    check(Shortcut(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey)).title == "⌃Space", "named keys")
+    let fromEvent = Shortcut(keyCode: UInt16(kVK_ANSI_K), flags: [.control, .option])
+    check(fromEvent == Shortcut(keyCode: UInt32(kVK_ANSI_K), modifiers: UInt32(controlKey | optionKey)), "event flags convert to Carbon")
+}
+
 section("Speed levels and Virtual Keyboard timing") {
     check(abs(Typer.delay(for: 0.24) - 0.23) < 1e-9 && Typer.delay(for: 0.005) == 0, "Quartz interval")
     for (interval, hold, gap) in [(0.24, 80, 160), (0.12, 60, 60), (0.06, 30, 30), (0.03, 15, 15), (0.02, 10, 10),

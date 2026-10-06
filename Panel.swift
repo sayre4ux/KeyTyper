@@ -3,7 +3,17 @@ import SwiftUI
 
 // Menu bar panel. It never activates TypeThru, so the app the user was typing into stays in front.
 
-enum PanelAction { case typeClipboard, test(TypingTest), setUp, checkVirtualKeyboard, checkAccessibility, diagnostics, uninstall, quit }
+enum PanelAction {
+    case typeClipboard, test(TypingTest), recordShortcut, resetShortcut, setUp, checkVirtualKeyboard, checkAccessibility, diagnostics, uninstall, quit
+
+    /// Shortcut changes happen inside the panel; everything else closes it first.
+    var keepsPanelOpen: Bool {
+        switch self {
+        case .recordShortcut, .resetShortcut: return true
+        default: return false
+        }
+    }
+}
 
 final class PanelModel: ObservableObject {
     struct Status: Equatable { var text: String; var ready: Bool; var needsSetUp = false }
@@ -13,6 +23,10 @@ final class PanelModel: ObservableObject {
     @Published var shiftReturn = true
     @Published var status = Status(text: "Checking…", ready: false)
     @Published var busy = false
+    @Published var shortcut = ""
+    @Published var shortcutIsStandard = true
+    @Published var recording = false
+    @Published var shortcutNote: String?
     var speeds: [String] = []
     var speedDetails: [String] = []
     var onChange: (() -> Void)?
@@ -30,7 +44,7 @@ struct PanelView: View {
                     Image(systemName: "keyboard")
                     Text("Type Clipboard").fontWeight(.semibold)
                     Spacer()
-                    Text("⌃\\").font(.system(.body, design: .rounded)).opacity(0.75)
+                    Text(model.shortcut).font(.system(.body, design: .rounded)).opacity(0.75)
                 }
                 .padding(.vertical, 6).padding(.horizontal, 4)
                 .frame(maxWidth: .infinity)
@@ -72,6 +86,22 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 10) {
             if model.status.needsSetUp {
                 Button("Set Up Virtual Keyboard…") { model.perform?(.setUp) }.glassButton()
+            }
+            LabeledContent("Shortcut") {
+                HStack(spacing: 6) {
+                    Text(model.recording ? "Press keys…" : model.shortcut)
+                        .font(.system(.callout, design: .rounded).weight(.medium))
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .glassCapsule()
+                    Button(model.recording ? "Cancel" : "Change") { model.perform?(.recordShortcut) }
+                        .glassButton().controlSize(.small)
+                    if !model.shortcutIsStandard && !model.recording {
+                        Button("Reset") { model.perform?(.resetShortcut) }.glassButton().controlSize(.small)
+                    }
+                }
+            }
+            if let note = model.shortcutNote {
+                Text(note).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
             LabeledContent("Method") {
                 Picker("Method", selection: binding(\.method)) {
