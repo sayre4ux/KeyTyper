@@ -88,22 +88,53 @@ final class Typer {
     private let source = CGEventSource(stateID: .hidSystemState)
     private let keyboardType = Int64(LMGetKbdType())
 
-    /// Returns the characters that cannot be typed, in order, without duplicates.
-    func unsupported(in text: String, map: [Character: KeyStroke], method: TypingMethod = .hid) -> [Character] {
-        var seen = Set<Character>()
-        return text.filter {
-            let supported: Bool
-            if method == .unicode { supported = $0.utf16.count <= 20 }
-            else if method == .virtualKeyboard {
-                supported = map[$0].flatMap { VirtualKeyboard.usages[$0.keyCode] } != nil
-            } else { supported = map[$0] != nil }
-            return !supported && seen.insert($0).inserted
+    // Symbols with no key on common layouts, typed as plain keys that read the same.
+    // DECISION: letters (such as é) are not replaced, because dropping an accent changes a word.
+    static let replacements: [Character: String] = [
+        "•": "-", "◦": "-", "▪": "-", "▫": "-", "‣": "-", "⁃": "-", "●": "-", "○": "-", "■": "-", "□": "-",
+        "·": "-", "∙": "-", "‐": "-", "‑": "-", "‒": "-", "–": "-", "−": "-", "—": "--", "―": "--",
+        "‘": "'", "’": "'", "‚": "'", "′": "'", "“": "\"", "”": "\"", "„": "\"", "″": "\"", "«": "\"", "»": "\"",
+        "…": "...", "×": "x", "÷": "/", "→": "->", "←": "<-", "⇒": "=>", "≤": "<=", "≥": ">=", "≠": "!=",
+        "©": "(c)", "®": "(R)", "™": "(TM)",
+        "\u{00A0}": " ", "\u{2002}": " ", "\u{2003}": " ", "\u{2009}": " ", "\u{202F}": " ",
+        "\u{200B}": "", "\u{FEFF}": "",
+    ]
+
+    func typeable(_ ch: Character, map: [Character: KeyStroke], method: TypingMethod) -> Bool {
+        switch method {
+        case .unicode: return ch.utf16.count <= 20
+        case .virtualKeyboard: return map[ch].flatMap { VirtualKeyboard.usages[$0.keyCode] } != nil
+        default: return map[ch] != nil
         }
     }
 
-    func type(_ text: String, map: [Character: KeyStroke], delay: TimeInterval,
+    /// Replaces symbols that have no key, when every replacement character has one.
+    func replacingUntypable(in text: String, map: [Character: KeyStroke],
+                            method: TypingMethod) -> (text: String, replaced: Int) {
+        var result = "", replaced = 0
+        for ch in text {
+            if !typeable(ch, map: map, method: method), let substitute = Typer.replacements[ch],
+               substitute.allSatisfy({ typeable($0, map: map, method: method) }) {
+                result += substitute
+                replaced += 1
+            } else {
+                result.append(ch)
+            }
+        }
+        return (result, replaced)
+    }
+
+    /// Returns the characters that cannot be typed, in order, without duplicates.
+    func unsupported(in text: String, map: [Character: KeyStroke], method: TypingMethod = .hid) -> [Character] {
+        var seen = Set<Character>()
+        return text.filter { !typeable($0, map: map, method: method) && seen.insert($0).inserted }
+    }
+
+    /// Types at `interval` seconds per character (Shift adds a little more).
+    func type(_ text: String, map: [Character: KeyStroke], interval: TimeInterval,
               method: TypingMethod, target: pid_t) -> TypeResult {
         let total = text.count
+        let delay = Typer.delay(for: interval)
         for (index, ch) in text.enumerated() {
             if CGEventSource.keyState(.hidSystemState, key: CGKeyCode(kVK_Escape)) {
                 return .cancelled(typed: index, total: total, reason: "Esc pressed")
@@ -112,7 +143,7 @@ final class Typer {
                 return .cancelled(typed: index, total: total, reason: "the front app changed")
             }
             if method == .virtualKeyboard {
-                guard let stroke = map[ch], VirtualKeyboard.press(stroke, delay: delay) else {
+                guard let stroke = map[ch], VirtualKeyboard.press(stroke, interval: interval) else {
                     return .cancelled(typed: index, total: total,
                                       reason: "Virtual Keyboard became unavailable; the last character may have been sent")
                 }
@@ -130,6 +161,9 @@ final class Typer {
         }
         return .done
     }
+
+    /// Quartz events hold each key for 10 ms, so the rest of the interval follows the key-up.
+    static func delay(for interval: TimeInterval) -> TimeInterval { max(0, interval - 0.01) }
 
     // Pure Quartz event construction: exercised by test.sh without posting keys.
     func events(for ch: Character, map: [Character: KeyStroke], method: TypingMethod,
@@ -227,13 +261,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         get { TypingMethod(rawValue: UserDefaults.standard.string(forKey: "typingMethodV2") ?? "") ?? .virtualKeyboard }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "typingMethodV2") }
     }
-    private let delays: [(String, TimeInterval)] = [
-        ("Fast (10 ms)", 0.01), ("Normal (30 ms)", 0.03), ("Slow (60 ms)", 0.06), ("Very slow (120 ms)", 0.12),
+    // DECISION: time per character at 5 characters per word. A study of 168,000 typists
+    // averaged 52 WPM and its fastest reached about 120; sprint records are 200 to 300 WPM.
+    private let speeds: [(String, TimeInterval)] = [
+        ("Average typist (50 WPM)", 0.24), ("Fast typist (100 WPM)", 0.12), ("Record typist (200 WPM)", 0.06),
+        ("Superhuman (400 WPM)", 0.03), ("Unrealistic (600 WPM)", 0.02),
     ]
-    // Virtual keyboard holds each key for 80 ms in addition to this inter-key delay.
-    private var delay: TimeInterval {
-        get { UserDefaults.standard.object(forKey: "delay") as? TimeInterval ?? 0.12 }
-        set { UserDefaults.standard.set(newValue, forKey: "delay") }
+    private var interval: TimeInterval {
+        get { UserDefaults.standard.object(forKey: "typingInterval") as? TimeInterval ?? 0.24 }
+        set { UserDefaults.standard.set(newValue, forKey: "typingInterval") }
+    }
+    private var replaceSymbols: Bool {
+        get { UserDefaults.standard.object(forKey: "replaceSymbols") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "replaceSymbols") }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -288,14 +328,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(methods)
         let speed = NSMenuItem(title: "Typing Speed", action: nil, keyEquivalent: "")
         let speedMenu = NSMenu()
-        for (index, (title, value)) in delays.enumerated() {
-            let item = NSMenuItem(title: title, action: #selector(setDelay(_:)), keyEquivalent: "")
+        for (index, (title, value)) in speeds.enumerated() {
+            let item = NSMenuItem(title: title, action: #selector(setSpeed(_:)), keyEquivalent: "")
             item.tag = index
-            item.state = abs(value - delay) < 0.0001 ? .on : .off
+            item.state = abs(value - interval) < 0.0001 ? .on : .off
             speedMenu.addItem(item)
         }
         speed.submenu = speedMenu
         menu.addItem(speed)
+        let replace = menu.addItem(withTitle: "Replace Symbols Without a Key (• → -)", action: #selector(toggleReplaceSymbols), keyEquivalent: "")
+        replace.state = replaceSymbols ? .on : .off
         menu.addItem(withTitle: "Set Up Virtual Keyboard…", action: #selector(setupVirtualKeyboard), keyEquivalent: "")
         menu.addItem(withTitle: "Check Virtual Keyboard", action: #selector(checkVirtualKeyboard), keyEquivalent: "")
         menu.addItem(withTitle: "Uninstall KeyTyper…", action: #selector(uninstall), keyEquivalent: "")
@@ -309,8 +351,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    @objc private func setDelay(_ sender: NSMenuItem) {
-        delay = delays[sender.tag].1
+    @objc private func setSpeed(_ sender: NSMenuItem) {
+        interval = speeds[sender.tag].1
+        rebuildMenu()
+    }
+
+    @objc private func toggleReplaceSymbols() {
+        replaceSymbols.toggle()
         rebuildMenu()
     }
 
@@ -385,12 +432,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lastAttempt += "\nNot started: Accessibility permission missing."
             promptForAccessibility(); return
         }
-        guard let text = testText ?? NSPasteboard.general.string(forType: .string), !text.isEmpty else {
+        guard let original = testText ?? NSPasteboard.general.string(forType: .string), !original.isEmpty else {
             lastAttempt += "\nNot started: clipboard has no text."
             alert("Nothing typed", "The clipboard has no text. You can use the built-in test from the menu.")
             return
         }
         let map = buildKeyMap()
+        let (text, replaced) = replaceSymbols && method != .unicode
+            ? typer.replacingUntypable(in: original, map: map, method: method) : (original, 0)
+        if replaced > 0 { lastAttempt += "\nReplaced \(replaced) symbols that have no key." }
         let missing = typer.unsupported(in: text, map: map, method: method)
         if !missing.isEmpty {
             lastAttempt += "\nNot started: unsupported characters."
@@ -402,10 +452,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         busy = true
         statusItem.button?.title = "…"
-        // The test is deliberately slow; changing the method is the only test variable.
-        let delay = testText == nil ? self.delay : 0.12
+        // The test uses the slowest speed; changing the method is the only test variable.
+        let interval = testText == nil ? self.interval : speeds[0].1
         let shortcutTarget = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        lastAttempt += "\nDelay: \(Int(delay * 1000)) ms\nWaiting to start."
+        lastAttempt += "\nSpeed: \(Int(interval * 1000)) ms per character\nWaiting to start."
         DispatchQueue.global(qos: .userInitiated).async { [typer] in
             let status = method == .virtualKeyboard ? VirtualKeyboard.status() : .ready
             if status != .ready {
@@ -430,7 +480,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 result = .cancelled(typed: 0, total: text.count, reason: "shortcut or modifier keys were not released")
             } else if let target = target, target.processIdentifier != ProcessInfo.processInfo.processIdentifier,
                       fromMenu || target.processIdentifier == shortcutTarget {
-                result = typer.type(text, map: map, delay: delay, method: method, target: target.processIdentifier)
+                result = typer.type(text, map: map, interval: interval, method: method, target: target.processIdentifier)
             } else {
                 result = .cancelled(typed: 0, total: text.count, reason: "the target app was unavailable or changed before typing")
             }
@@ -467,6 +517,7 @@ if CommandLine.arguments.dropFirst().first == "--print-map" {
     let map = buildKeyMap()
     for ch in text {
         if let s = map[ch] { print("\(ch.debugDescription)\tkey \(s.keyCode)\(s.shift ? " + Shift" : "")") }
+        else if let r = Typer.replacements[ch], r.allSatisfy({ map[$0] != nil }) { print("\(ch.debugDescription)\treplaced with \(r.debugDescription)") }
         else { print("\(ch.debugDescription)\tNO KEY") }
     }
     exit(0)

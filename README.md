@@ -35,9 +35,16 @@ first build downloads the virtual keyboard driver source, so it needs internet a
 2. Click the text field in the remote session.
 3. Press **Control+\\**, or choose **Type Clipboard** from the menu.
 
-Press **Esc** or switch apps to stop. If characters are dropped, choose a slower
-**Typing Speed**. Keep the keyboard layout the same on the Mac and in the remote session.
-KeyTyper types nothing if the text contains a character with no key on your layout.
+Press **Esc** or switch apps to stop. Keep the keyboard layout the same on the Mac and in
+the remote session.
+
+**Typing Speed** runs from *Average typist (50 WPM)*, the default, through fast and record
+typists to *Unrealistic (600 WPM)*. If characters are dropped, choose a slower speed.
+
+Symbols with no key on your layout, such as bullets, smart quotes, dashes, and `…`, are
+typed as the closest plain keys (`•` becomes `-`, `“` becomes `"`). Turn off **Replace
+Symbols Without a Key** when the text must match exactly. KeyTyper types nothing if the text
+still contains a character with no key.
 
 ## Troubleshooting
 

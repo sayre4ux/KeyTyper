@@ -80,10 +80,17 @@ enum VirtualKeyboard {
         return recv(fd, &reply, 1, 0) == 1 ? reply : nil
     }
 
-    static func press(_ stroke: KeyStroke, delay: TimeInterval) -> Bool {
+    /// Splits the time per character into key hold and gap, both in ms, within the helper's limits.
+    static func timing(for interval: TimeInterval) -> (hold: UInt16, gap: UInt16) {
+        let total = max(20, min(580, Int((interval * 1000).rounded())))
+        // DECISION: keep the proven 80 ms hold when there is time; faster speeds hold for half the interval.
+        let hold = min(80, total / 2)
+        return (UInt16(hold), UInt16(total - hold))
+    }
+
+    static func press(_ stroke: KeyStroke, interval: TimeInterval) -> Bool {
         guard let usage = usages[stroke.keyCode] else { return false }
-        let gap = UInt16(max(0, min(500, delay * 1000)))
-        // Preserve the proven POC's 80 ms physical key hold.
-        return exchange([1, 1, usage, stroke.shift ? 2 : 0, 80, 0, UInt8(gap & 255), UInt8(gap >> 8)]) == 0
+        let (hold, gap) = timing(for: interval)
+        return exchange([1, 1, usage, stroke.shift ? 2 : 0, UInt8(hold), 0, UInt8(gap & 255), UInt8(gap >> 8)]) == 0
     }
 }

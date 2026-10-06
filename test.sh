@@ -55,7 +55,17 @@ for ch: Character in ["A", "中", "🙂", "👨‍👩‍👧‍👦"] {
 let oversized = Character("a" + String(repeating: "\u{0301}", count: 25))
 check(typer.unsupported(in: String(oversized), map: [:], method: .unicode) == [oversized], "oversized Unicode preflight")
 check(typer.events(for: oversized, map: [:], method: .unicode, delay: 0) == nil, "oversized Unicode rejected")
-print("PASS: four modes, event pairing, Shift release, pacing, control keys, unsupported input, and Unicode round trips. No events posted.")
+let dashes: [Character: KeyStroke] = fixture.merging(["-": KeyStroke(keyCode: 27, shift: false)]) { a, _ in a }
+let swapped = typer.replacingUntypable(in: "•a—\u{200B}中", map: dashes, method: .virtualKeyboard)
+check(swapped.text == "-a--中" && swapped.replaced == 3, "symbols replaced only when the replacement has a key")
+check(typer.replacingUntypable(in: "•", map: fixture, method: .hid).replaced == 0, "no replacement without its key")
+check(typer.unsupported(in: swapped.text, map: dashes, method: .virtualKeyboard) == ["中"], "unreplaced stays unsupported")
+check(abs(Typer.delay(for: 0.24) - 0.23) < 1e-9 && Typer.delay(for: 0.005) == 0, "Quartz interval")
+for (interval, hold, gap) in [(0.24, 80, 160), (0.12, 60, 60), (0.02, 10, 10), (0.001, 10, 10), (5.0, 80, 500)] {
+    let t = VirtualKeyboard.timing(for: interval)
+    check(t.hold == UInt16(hold) && t.gap == UInt16(gap), "virtual keyboard timing \(interval)")
+}
+print("PASS: four modes, event pairing, Shift release, pacing, control keys, unsupported input, symbol replacement, speed timing, and Unicode round trips. No events posted.")
 SWIFT
 swiftc -module-cache-path "$TEST_DIR/module-cache" "$TEST_DIR/main.swift" -o "$TEST_DIR/tests"
 "$TEST_DIR/tests"
