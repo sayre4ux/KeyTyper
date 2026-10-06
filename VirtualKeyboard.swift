@@ -66,9 +66,9 @@ enum VirtualKeyboard {
         var help: String {
             switch self {
             case .ready:
-                return "Use Control+\\ or Type Clipboard to type. For a first test, choose Test abc123 in 3 seconds, then click the text field in your remote session."
+                return "Use Control+\\ or Type Clipboard to type. For a first test, choose the Short typing test in the TypeThru panel, then click the text field in your remote session."
             case .notInstalled:
-                return "Choose Set Up Virtual Keyboard… from the TypeThru menu."
+                return "Click the TypeThru icon in the menu bar and choose Set Up Virtual Keyboard…."
             case .notResponding:
                 return "The helper is installed but did not answer. Wait a few seconds and check again. If this continues, choose Set Up Virtual Keyboard… again."
             case .driverNotReady:

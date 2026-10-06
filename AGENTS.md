@@ -3,14 +3,17 @@
 Guidance for AI coding agents working on TypeThru. Read this before changing code.
 
 TypeThru is a macOS menu bar app that types the clipboard as key presses into VDI and remote
-desktop sessions where paste does not work. It is small (two Swift files, one C++ helper,
+desktop sessions where paste does not work. It is small (four Swift files, one C++ helper,
 a few shell scripts) and has no package manager or Xcode project.
 
 ## Layout
 
 | Path | Role |
 |---|---|
-| `main.swift` | App: key map from the active layout, Quartz typing methods, global hotkey, menu, onboarding, diagnostics |
+| `main.swift` | App: key map from the active layout, Quartz typing methods, typing tests, global hotkey, onboarding, diagnostics |
+| `Panel.swift` | Menu bar panel (SwiftUI, Liquid Glass on macOS 26+). A non-activating panel, so the target app stays in front |
+| `Brand.swift` | The TypeThru mark, shared by the menu bar icon and the app icon |
+| `icon/` | `make-icon.sh` redraws `AppIcon.icns` from `make-icon.swift`; rerun it after changing the mark |
 | `VirtualKeyboard.swift` | Client for the root helper: macOS keycode → HID usage map, socket exchange, status |
 | `helper/virtual-keyboard.cpp` | Root helper (launch daemon). Validates packets and posts HID reports to the Karabiner virtual keyboard |
 | `helper/install-helper.sh` | Root-side setup: driver package check/install, launch daemon |
@@ -40,10 +43,10 @@ Run `./test.sh` and `./build.sh` after every code change. Both must pass.
 
 ## What an agent must not do
 
-- **Never post real keyboard input.** Do not trigger typing, run the menu tests, or send
+- **Never post real keyboard input.** Do not trigger typing, run the panel's typing tests, or send
   press packets to the helper. Tests construct events and inspect them; they never post.
   The readiness probe (packet `1,0,0,0,0,0,0,0`) is the only packet that is safe to send.
-- **Never run setup or uninstall (the menu items or the `helper/*.sh` scripts), or anything
+- **Never run setup or uninstall (the panel items or the `helper/*.sh` scripts), or anything
   with `sudo`.** They change system state and need the user's administrator password. The
   app runs the scripts through the macOS password prompt (`VirtualKeyboard.runAsAdministrator`).
 - **Never commit personal signing data**: certificate names, hashes, team IDs, or email

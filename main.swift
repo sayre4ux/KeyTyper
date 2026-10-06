@@ -69,8 +69,8 @@ enum TypingMethod: String, CaseIterable {
         }
     }
 
-    var menuTitle: String {
-        self == .virtualKeyboard ? "Virtual Keyboard: for VDI and remote desktops (recommended)" : title
+    var shortTitle: String {
+        self == .virtualKeyboard ? "Virtual Keyboard (recommended)" : "Quartz: \(title)"
     }
 
     func deliver(_ event: CGEvent, to pid: pid_t) {
@@ -81,6 +81,48 @@ enum TypingMethod: String, CaseIterable {
         case .direct: event.postToPid(pid)
         }
     }
+}
+
+/// Built-in samples for checking a method, speed, and layout against the remote session.
+enum TypingTest: CaseIterable {
+    case short, capitals, symbols, smartSymbols, long
+
+    var title: String {
+        switch self {
+        case .short: return "Short"
+        case .capitals: return "Capitals"
+        case .symbols: return "Symbols"
+        case .smartSymbols: return "Smart symbols"
+        case .long: return "Long"
+        }
+    }
+
+    var text: String {
+        switch self {
+        case .short: return "abc123"
+        case .capitals: return "AbC123!"
+        case .symbols: return "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+        case .smartSymbols: return "• Bullet – en — em “double” ‘single’ … 3×4÷2 → ≤ ≥ ≠ © ® ™"
+        case .long:
+            return "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs!\n"
+                + "Invoice #2048: $1,299.50 (incl. 8% tax) due 2026-10-31; ref A-17/B.\n"
+                + "\tIndented: test@example.com, C:\\Temp\\notes.txt, {braces} [brackets] <angles>.\n"
+                + "Sphinx of black quartz, judge my vow? 0123456789 ~ ` ^ | _ + = \" '"
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .short: return "Types abc123 at the slowest speed."
+        case .capitals: return "Types AbC123! at the slowest speed, to check Shift."
+        case .symbols: return "Types all 32 keyboard symbols at the slowest speed."
+        case .smartSymbols: return "Types bullets, smart quotes, and dashes as plain keys: - Bullet - en -- em \"double\" 'single' ... 3x4/2 -> <= >= != (c) (R) (TM)"
+        case .long: return "Types four lines with Tab and Return at your selected speed. Use a multi-line text field."
+        }
+    }
+
+    // DECISION: short tests use the slowest speed to isolate the method; the long test checks the selected speed.
+    var usesSelectedSpeed: Bool { self == .long }
 }
 
 final class Typer {
@@ -261,11 +303,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         get { TypingMethod(rawValue: UserDefaults.standard.string(forKey: "typingMethodV2") ?? "") ?? .virtualKeyboard }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "typingMethodV2") }
     }
+    private let panel = PanelController()
+    private var panelClosedAt = Date.distantPast
     // DECISION: time per character at 5 characters per word. A study of 168,000 typists
     // averaged 52 WPM and its fastest reached about 120; sprint records are 200 to 300 WPM.
-    private let speeds: [(String, TimeInterval)] = [
-        ("Average typist (50 WPM)", 0.24), ("Fast typist (100 WPM)", 0.12), ("Record typist (200 WPM)", 0.06),
-        ("Superhuman (400 WPM)", 0.03), ("Unrealistic (600 WPM)", 0.02),
+    private let speeds: [(title: String, interval: TimeInterval, detail: String)] = [
+        ("Average typist · 50 WPM", 0.24, "240 ms per key. A typical typist, and the most reliable."),
+        ("Fast typist · 100 WPM", 0.12, "120 ms per key. The fastest 5% of typists."),
+        ("Record typist · 200 WPM", 0.06, "60 ms per key. World-record pace."),
+        ("Superhuman · 400 WPM", 0.03, "30 ms per key. Some remote sessions drop keys."),
+        ("Unrealistic · 600 WPM", 0.02, "20 ms per key. Expect dropped keys on slow connections."),
     ]
     private var interval: TimeInterval {
         get { UserDefaults.standard.object(forKey: "typingInterval") as? TimeInterval ?? 0.24 }
@@ -278,13 +325,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: "TypeThru")
-        rebuildMenu()
+        statusItem.button?.image = Brand.menuBarImage()
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(togglePanel)
+        setUpPanel()
         if requireApplicationsFolder() { return }
 
         onHotKey = { [weak self] in self?.trigger(fromMenu: false) }
         if !registerHotKey() {
-            alert("Could not register ⌃\\", "macOS returned error \(hotKeyRegistrationStatus). The shortcut may be in use by another app. Use the menu bar item instead.")
+            alert("Could not register ⌃\\", "macOS returned error \(hotKeyRegistrationStatus). The shortcut may be in use by another app. Click the TypeThru icon in the menu bar and choose Type Clipboard instead.")
         }
         if !AXIsProcessTrusted() { promptForAccessibility() }
         continueOnboarding()
@@ -316,72 +365,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func rebuildMenu() {
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Type Clipboard (⌃\\)", action: #selector(typeFromMenu), keyEquivalent: "")
-        menu.addItem(withTitle: "Test abc123 in 3 seconds", action: #selector(testTyping), keyEquivalent: "")
-        menu.addItem(withTitle: "Test AbC123! in 3 seconds", action: #selector(testShiftTyping), keyEquivalent: "")
-        menu.addItem(.separator())
-        let methods = NSMenuItem(title: "Typing Method", action: nil, keyEquivalent: "")
-        let methodMenu = NSMenu()
-        for (index, value) in TypingMethod.allCases.enumerated() {
-            if index == 1 {
-                methodMenu.addItem(.separator())
-                methodMenu.addItem(withTitle: "Quartz events: for apps on this Mac", action: nil, keyEquivalent: "")
-            }
-            let item = NSMenuItem(title: value.menuTitle, action: #selector(setMethod(_:)), keyEquivalent: "")
-            item.tag = index
-            item.state = value == method ? .on : .off
-            item.indentationLevel = value == .virtualKeyboard ? 0 : 1
-            item.target = self
-            methodMenu.addItem(item)
+    private func setUpPanel() {
+        let model = panel.model
+        model.speeds = speeds.map(\.title)
+        model.speedDetails = speeds.map(\.detail)
+        model.onChange = { [weak self] in
+            guard let self else { return }
+            let methodChanged = self.method != model.method
+            self.method = model.method
+            self.interval = self.speeds[model.speedIndex].interval
+            self.replaceSymbols = model.replaceSymbols
+            if methodChanged { self.refreshStatus() }
         }
-        methods.submenu = methodMenu
-        menu.addItem(methods)
-        let speed = NSMenuItem(title: "Typing Speed", action: nil, keyEquivalent: "")
-        let speedMenu = NSMenu()
-        for (index, (title, value)) in speeds.enumerated() {
-            let item = NSMenuItem(title: title, action: #selector(setSpeed(_:)), keyEquivalent: "")
-            item.tag = index
-            item.state = abs(value - interval) < 0.0001 ? .on : .off
-            speedMenu.addItem(item)
+        model.perform = { [weak self] action in self?.perform(action) }
+    }
+
+    @objc private func togglePanel() {
+        guard let button = statusItem.button else { return }
+        // A click on the menu bar icon first closes the open panel; do not reopen it.
+        if panel.isShown || Date().timeIntervalSince(panelClosedAt) < 0.3 { panel.close(); return }
+        let model = panel.model
+        model.method = method
+        model.speedIndex = speeds.firstIndex { abs($0.interval - interval) < 0.0001 } ?? 0
+        model.replaceSymbols = replaceSymbols
+        model.busy = busy
+        panel.onClose = { [weak self] in self?.panelClosedAt = Date() }
+        panel.show(below: button)
+        refreshStatus()
+    }
+
+    private func refreshStatus() {
+        let method = self.method
+        DispatchQueue.global(qos: .userInitiated).async {
+            let trusted = AXIsProcessTrusted()
+            let keyboard = method == .virtualKeyboard ? VirtualKeyboard.status() : .ready
+            let status: PanelModel.Status
+            if !trusted { status = .init(text: "Allow Accessibility", ready: false) }
+            else if keyboard == .notInstalled { status = .init(text: "Set up needed", ready: false, needsSetUp: true) }
+            else if keyboard != .ready { status = .init(text: "Not ready", ready: false) }
+            else { status = .init(text: "Ready", ready: true) }
+            DispatchQueue.main.async { self.panel.model.status = status }
         }
-        speed.submenu = speedMenu
-        menu.addItem(speed)
-        let replace = menu.addItem(withTitle: "Replace Symbols Without a Key (• → -)", action: #selector(toggleReplaceSymbols), keyEquivalent: "")
-        replace.state = replaceSymbols ? .on : .off
-        menu.addItem(withTitle: "Set Up Virtual Keyboard…", action: #selector(setupVirtualKeyboard), keyEquivalent: "")
-        menu.addItem(withTitle: "Check Virtual Keyboard", action: #selector(checkVirtualKeyboard), keyEquivalent: "")
-        menu.addItem(withTitle: "Uninstall TypeThru…", action: #selector(uninstall), keyEquivalent: "")
-        menu.addItem(withTitle: "Check Accessibility Permission", action: #selector(checkPermission), keyEquivalent: "")
-        menu.addItem(withTitle: "Last Attempt / Diagnostics", action: #selector(showDiagnostics), keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Press Esc or switch apps to stop typing", action: nil, keyEquivalent: "")
-        menu.addItem(withTitle: "Quit TypeThru", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        for item in menu.items where item.action != nil { item.target = item.action == #selector(NSApplication.terminate(_:)) ? NSApp : self }
-        for item in speedMenu.items { item.target = self }
-        statusItem.menu = menu
     }
 
-    @objc private func setSpeed(_ sender: NSMenuItem) {
-        interval = speeds[sender.tag].1
-        rebuildMenu()
+    private func setBusy(_ value: Bool) {
+        busy = value
+        panel.model.busy = value
+        statusItem.button?.title = value ? "…" : ""
     }
 
-    @objc private func toggleReplaceSymbols() {
-        replaceSymbols.toggle()
-        rebuildMenu()
-    }
-
-    @objc private func typeFromMenu() { trigger(fromMenu: true) }
-
-    @objc private func testTyping() { trigger(fromMenu: true, testText: "abc123") }
-    @objc private func testShiftTyping() { trigger(fromMenu: true, testText: "AbC123!") }
-
-    @objc private func setMethod(_ sender: NSMenuItem) {
-        method = TypingMethod.allCases[sender.tag]
-        rebuildMenu()
-        if method == .virtualKeyboard { checkVirtualKeyboard() }
+    private func perform(_ action: PanelAction) {
+        panel.close()
+        switch action {
+        case .typeClipboard: trigger(fromMenu: true)
+        case .test(let test): trigger(fromMenu: true, test: test)
+        case .setUp: setupVirtualKeyboard()
+        case .checkVirtualKeyboard: checkVirtualKeyboard()
+        case .checkAccessibility: checkPermission()
+        case .diagnostics: showDiagnostics()
+        case .uninstall: uninstall()
+        case .quit: NSApp.terminate(nil)
+        }
     }
 
     @objc private func setupVirtualKeyboard() {
@@ -389,7 +433,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let sheet = NSAlert()
         sheet.messageText = "Set up TypeThru Virtual Keyboard"
-        sheet.informativeText = "Virtual Keyboard types through a virtual USB keyboard, so VDI and remote desktop clients receive real key presses.\n\n1. Choose Set Up and enter your Mac administrator password. This installs a small background helper and the Karabiner virtual keyboard driver. An already installed driver is reused.\n2. If macOS asks, allow the Karabiner driver in System Settings.\n3. Choose Test abc123 in 3 seconds, then click a text field in your remote session.\n\nTypeThru itself stays unprivileged. A small helper runs in the background and accepts keyboard reports only from your Mac user account. TypeThru only sends key presses. It never reads what you type, and clipboard text is never written to files or logs. Keep the keyboard layout on this Mac and in the remote session the same.\n\nTo remove everything later, choose Uninstall TypeThru… from the TypeThru menu."
+        sheet.informativeText = "Virtual Keyboard types through a virtual USB keyboard, so VDI and remote desktop clients receive real key presses.\n\n1. Choose Set Up and enter your Mac administrator password. This installs a small background helper and the Karabiner virtual keyboard driver. An already installed driver is reused.\n2. If macOS asks, allow the Karabiner driver in System Settings.\n3. In the TypeThru panel, choose the Short typing test, then click a text field in your remote session.\n\nTypeThru itself stays unprivileged. A small helper runs in the background and accepts keyboard reports only from your Mac user account. TypeThru only sends key presses. It never reads what you type, and clipboard text is never written to files or logs. Keep the keyboard layout on this Mac and in the remote session the same.\n\nTo remove everything later, choose More > Uninstall TypeThru… in the TypeThru panel."
         sheet.addButton(withTitle: "Set Up")
         sheet.addButton(withTitle: "Later")
         guard sheet.runModal() == .alertFirstButtonReturn else { return }
@@ -398,8 +442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             prompt: "TypeThru needs your password to install its Virtual Keyboard helper.")
         if case let .failed(reason) = result { alert("Setup did not finish", reason); return }
         guard result == .done else { return }
-        busy = true
-        statusItem.button?.title = "…"
+        setBusy(true)
         DispatchQueue.global(qos: .userInitiated).async {
             VirtualKeyboard.runManager("activate")
             // The helper connects to the driver within a few seconds of starting.
@@ -409,8 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 status = VirtualKeyboard.status()
             }
             DispatchQueue.main.async {
-                self.busy = false
-                self.statusItem.button?.title = ""
+                self.setBusy(false)
                 if status == .driverNotReady { self.askToApproveDriver() } else { self.alert(status.title, status.help) }
             }
         }
@@ -420,7 +462,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let sheet = NSAlert()
         sheet.messageText = "Allow the Karabiner driver"
-        sheet.informativeText = "The helper is installed. In System Settings, allow the Karabiner virtual keyboard driver (General > Login Items & Extensions > Driver Extensions, or Privacy & Security). Then choose Check Virtual Keyboard from the TypeThru menu."
+        sheet.informativeText = "The helper is installed. In System Settings, allow the Karabiner virtual keyboard driver (General > Login Items & Extensions > Driver Extensions, or Privacy & Security). Then choose More > Check Virtual Keyboard in the TypeThru panel."
         sheet.addButton(withTitle: "Open System Settings")
         sheet.addButton(withTitle: "Later")
         guard sheet.runModal() == .alertFirstButtonReturn else { return }
@@ -456,8 +498,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sheet.addButton(withTitle: "Cancel")
         guard sheet.runModal() == .alertFirstButtonReturn else { return }
         let removeDriver = driverInstalled && sheet.suppressionButton?.state == .on
-        busy = true
-        statusItem.button?.title = "…"
+        setBusy(true)
         DispatchQueue.global(qos: .userInitiated).async {
             // The driver is deactivated as the user before root removes its files.
             if removeDriver { VirtualKeyboard.runManager("deactivate") }
@@ -469,8 +510,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let result = VirtualKeyboard.runAsAdministrator(
             "uninstall-helper", [removeDriver ? "remove-driver" : "keep-driver"],
             prompt: "TypeThru needs your password to remove its Virtual Keyboard helper.")
-        busy = false
-        statusItem.button?.title = ""
+        setBusy(false)
         if case let .failed(reason) = result { alert("Uninstall did not finish", reason); return }
         guard result == .done else { return }
         UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? "local.keytyper")
@@ -503,22 +543,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
-    private func trigger(fromMenu: Bool, testText: String? = nil) {
+    private func trigger(fromMenu: Bool, test: TypingTest? = nil) {
+        let testText = test?.text
         guard !busy else { NSSound.beep(); return }
         let method = self.method
         let time = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
-        lastAttempt = "Attempt: \(time)\nTrigger: \(fromMenu ? "menu" : "shortcut")\nMethod: \(method.title)\nSecure Event Input at trigger: \(IsSecureEventInputEnabled() ? "enabled" : "disabled")"
+        lastAttempt = "Attempt: \(time)\nTrigger: \(test.map { "\($0.title) test" } ?? (fromMenu ? "panel" : "shortcut"))\nMethod: \(method.title)\nSecure Event Input at trigger: \(IsSecureEventInputEnabled() ? "enabled" : "disabled")"
         guard AXIsProcessTrusted() else {
             lastAttempt += "\nNot started: Accessibility permission missing."
             promptForAccessibility(); return
         }
         guard let original = testText ?? NSPasteboard.general.string(forType: .string), !original.isEmpty else {
             lastAttempt += "\nNot started: clipboard has no text."
-            alert("Nothing typed", "The clipboard has no text. You can use the built-in test from the menu.")
+            alert("Nothing typed", "The clipboard has no text. You can try a typing test from the TypeThru panel.")
             return
         }
         let map = buildKeyMap()
-        let (text, replaced) = replaceSymbols && method != .unicode
+        // The smart symbols test exists to show the replacements, so it always replaces.
+        let (text, replaced) = (replaceSymbols || test == .smartSymbols) && method != .unicode
             ? typer.replacingUntypable(in: original, map: map, method: method) : (original, 0)
         if replaced > 0 { lastAttempt += "\nReplaced \(replaced) symbols that have no key." }
         let missing = typer.unsupported(in: text, map: map, method: method)
@@ -530,25 +572,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        busy = true
-        statusItem.button?.title = "…"
-        // The test uses the slowest speed; changing the method is the only test variable.
-        let interval = testText == nil ? self.interval : speeds[0].1
+        setBusy(true)
+        let interval = test.map { $0.usesSelectedSpeed ? self.interval : speeds[0].interval } ?? self.interval
         let shortcutTarget = NSWorkspace.shared.frontmostApplication?.processIdentifier
         lastAttempt += "\nSpeed: \(Int(interval * 1000)) ms per character\nWaiting to start."
         DispatchQueue.global(qos: .userInitiated).async { [typer] in
             let status = method == .virtualKeyboard ? VirtualKeyboard.status() : .ready
             if status != .ready {
                 DispatchQueue.main.async {
-                    self.busy = false
-                    self.statusItem.button?.title = ""
+                    self.setBusy(false)
                     self.lastAttempt += "\nNot started: \(status.title)."
                     if status == .notInstalled { self.setupVirtualKeyboard() }
                     else { self.alert("Nothing typed: \(status.title)", status.help) }
                 }
                 return
             }
-            // Menu tests let the user explicitly focus the remote field. Shortcut runs
+            // Panel runs let the user explicitly focus the remote field. Shortcut runs
             // retain their original target rather than silently picking a different app.
             if fromMenu { Thread.sleep(forTimeInterval: testText == nil ? 1.0 : 3.0) }
             let released = waitForModifierRelease(includeTriggerKey: !fromMenu)
@@ -566,8 +605,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             let targetName = target?.localizedName ?? "unknown"
             DispatchQueue.main.async {
-                self.busy = false
-                self.statusItem.button?.title = ""
+                self.setBusy(false)
                 self.lastAttempt += "\nTarget: \(targetName)"
                 if case let .cancelled(typed, total, reason) = result {
                     self.lastAttempt += "\nStopped after sending \(typed) of \(total) characters: \(reason)."

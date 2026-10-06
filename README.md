@@ -23,7 +23,7 @@ Requires macOS 13 or later, on Apple silicon or Intel.
 1. Download `TypeThru-<version>.dmg` from
    [Releases](https://github.com/sayre4ux/KeyTyper/releases) and open it.
 2. Drag **TypeThru** into **Applications**, eject the disk, and open TypeThru from
-   Applications. A keyboard icon appears in the menu bar.
+   Applications. The TypeThru icon appears in the menu bar; click it to open the TypeThru panel.
 3. The beta is not notarized yet. If macOS says it cannot verify TypeThru, open
    **System Settings > Privacy & Security**, scroll down, and choose **Open Anyway**. This is
    needed once.
@@ -31,7 +31,7 @@ Requires macOS 13 or later, on Apple silicon or Intel.
 5. When TypeThru offers Virtual Keyboard setup, choose **Set Up** and enter your administrator
    password.
 6. If macOS asks, allow the Karabiner driver in System Settings.
-7. Choose **Test abc123 in 3 seconds** and click a text field in the remote session.
+7. In the panel, choose the **Short** typing test and click a text field in the remote session.
 
 ### Build from source
 
@@ -43,18 +43,32 @@ the virtual keyboard driver source, so it needs internet access. Run `./build.sh
 
 1. Copy text on your Mac.
 2. Click the text field in the remote session.
-3. Press **Control+\\**, or choose **Type Clipboard** from the menu.
+3. Press **Control+\\**, or choose **Type Clipboard** in the TypeThru panel.
 
 Press **Esc** or switch apps to stop. Keep the keyboard layout the same on the Mac and in
 the remote session.
 
-**Typing Speed** runs from *Average typist (50 WPM)*, the default, through fast and record
-typists to *Unrealistic (600 WPM)*. If characters are dropped, choose a slower speed.
+**Speed** in the panel runs from *Average typist · 50 WPM*, the default, through fast and
+record typists to *Unrealistic · 600 WPM*. If characters are dropped, choose a slower speed.
 
 Symbols with no key on your layout, such as bullets, smart quotes, dashes, and `…`, are
 typed as the closest plain keys (`•` becomes `-`, `“` becomes `"`). Turn off **Replace
-Symbols Without a Key** when the text must match exactly. TypeThru types nothing if the text
+symbols without a key** when the text must match exactly. TypeThru types nothing if the text
 still contains a character with no key.
+
+### Typing tests
+
+Each test starts 3 seconds after you choose it, so click the target text field first.
+
+| Test | Types | Checks |
+|---|---|---|
+| Short | `abc123` | The method works at all |
+| Capitals | `AbC123!` | Shift reaches the remote session |
+| Symbols | all 32 keyboard symbols | The keyboard layout matches on both sides |
+| Smart symbols | `• “double” — …` and more | Symbol replacement; expect `- "double" -- ...` |
+| Long | four lines with Tab and Return | Your selected speed. Use a multi-line field |
+
+All tests except Long run at the slowest speed, so the method is the only thing tested.
 
 ## Troubleshooting
 
@@ -65,14 +79,14 @@ still contains a character with no key.
 | It says *driver is not active yet* | Approve the Karabiner system extension in System Settings |
 | Diagnostics says all characters were sent, but nothing appeared | The remote text field did not have focus. Click it and retry. |
 | The shortcut stops working after a rebuild | See [Signing](#signing) |
-| A remote app needs Control+\\ | Use **Type Clipboard** from the menu |
+| A remote app needs Control+\\ | Use **Type Clipboard** in the panel |
 
-**Last Attempt / Diagnostics** in the menu shows whether the shortcut arrived, which app was
+**More > Last Attempt / Diagnostics** in the panel shows whether the shortcut arrived, which app was
 in front, and why typing stopped.
 
 ## Uninstall
 
-Choose **Uninstall TypeThru…** from the menu and enter your administrator password. It removes
+Choose **More > Uninstall TypeThru…** in the panel and enter your administrator password. It removes
 the helper, settings, and the Accessibility entry, then quits. Tick **Also remove the Karabiner
 virtual keyboard driver** only if no other app, such as Karabiner-Elements, uses it. Then move
 TypeThru from Applications to the Trash.
