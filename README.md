@@ -48,9 +48,9 @@ the virtual keyboard driver source, so it needs internet access. Run `./build.sh
 Press **Esc**, click the mouse, or switch apps or windows to stop. Keep the keyboard layout the
 same on the Mac and in the remote session.
 
-Line breaks are typed as Return. Turn on **Type line breaks as Shift+Return** for chat apps
-where Return sends the message; leave it off for spreadsheets, where Shift+Return moves up a
-cell.
+Line breaks are typed as Shift+Return, so chat apps make a new line instead of sending the
+message. Turn off **Type line breaks as Shift+Return** for spreadsheets, where Shift+Return
+moves up a cell, or for any app that needs a plain Return.
 
 **Speed** in the panel runs from *Average typist · 50 WPM*, the default, through fast and
 record typists to *Unrealistic · 600 WPM*. If characters are dropped, choose a slower speed.

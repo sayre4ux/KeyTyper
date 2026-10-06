@@ -192,6 +192,8 @@ final class Typer {
         "©": "(c)", "®": "(R)", "™": "(TM)",
         "\u{00A0}": " ", "\u{2002}": " ", "\u{2003}": " ", "\u{2009}": " ", "\u{202F}": " ",
         "\u{200B}": "", "\u{FEFF}": "",
+        // Line and paragraph separators, and Word's manual line break, become a normal line break.
+        "\u{2028}": "\n", "\u{2029}": "\n", "\u{000B}": "\n", "\u{0085}": "\n",
     ]
 
     func typeable(_ ch: Character, map: [Character: KeyStroke], method: TypingMethod) -> Bool {
@@ -378,10 +380,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         get { UserDefaults.standard.object(forKey: "replaceSymbols") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "replaceSymbols") }
     }
-    // DECISION: off by default. Shift+Return is a soft line break in chat apps and word processors,
-    // but moves up a cell in spreadsheets and may do nothing in terminals.
+    // DECISION: on by default (user request): Shift+Return makes a new line in chat apps and word
+    // processors instead of sending. Spreadsheets move up a cell, so the panel can turn it off.
     private var shiftReturn: Bool {
-        get { UserDefaults.standard.bool(forKey: "shiftReturn") }
+        get { UserDefaults.standard.object(forKey: "shiftReturn") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "shiftReturn") }
     }
 

@@ -65,7 +65,7 @@ Run `./test.sh` and `./build.sh` after every code change. Both must pass.
 modifiers and the hotkey key are up, then types into the app that was in front when the
 shortcut was pressed. `StopWatcher` polls every 10 ms while typing and stops on Esc, a new
 mouse click, or a change of front app or front window (Accessibility). Return can be typed as
-Shift+Return (`Typer.shiftReturn`), off by default. The whole text is
+Shift+Return (`Typer.shiftReturn`), on by default. The whole text is
 checked against the layout before anything is sent; unsupported characters abort the run.
 
 **Quartz methods** build a `CGEvent` pair per character (with explicit Shift

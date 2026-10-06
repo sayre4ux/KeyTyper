@@ -10,7 +10,7 @@ final class PanelModel: ObservableObject {
     @Published var method = TypingMethod.virtualKeyboard
     @Published var speedIndex = 0
     @Published var replaceSymbols = true
-    @Published var shiftReturn = false
+    @Published var shiftReturn = true
     @Published var status = Status(text: "Checking…", ready: false)
     @Published var busy = false
     var speeds: [String] = []
@@ -92,7 +92,7 @@ struct PanelView: View {
                 .toggleStyle(.switch).controlSize(.small).tint(Brand.accent)
             Toggle("Type line breaks as Shift+Return", isOn: binding(\.shiftReturn))
                 .toggleStyle(.switch).controlSize(.small).tint(Brand.accent)
-                .help("For chat apps where Return sends the message. Spreadsheets move up a cell instead.")
+                .help("Makes a new line instead of sending in chat apps. Turn off for spreadsheets, where Shift+Return moves up a cell.")
         }
         .font(.callout)
     }
