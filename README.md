@@ -1,64 +1,115 @@
-# TypeThru
+<p align="center">
+  <img src="docs/icon.png" width="128" height="128" alt="TypeThru icon">
+</p>
 
-A macOS menu bar app that types your clipboard as key presses, for VDI and remote desktop
-sessions where paste does not work. Press **Control+\\** to type the clipboard into whatever
-has focus.
+<h1 align="center">TypeThru</h1>
 
-## Typing methods
+<p align="center">
+  <b>Type your clipboard through to any remote desktop.</b><br>
+  For VDI and remote desktop sessions where paste does not work.
+</p>
 
-- **Virtual Keyboard** (recommended for remote sessions). Keys go through a virtual USB
-  keyboard, so remote clients that ignore synthetic macOS events still receive them. Needs a
-  one-time setup with an administrator password.
-- **Quartz events** (for apps on this Mac). Four ways of posting macOS key events. No setup,
-  but many remote clients ignore them. *Unicode text events* can type characters that your
-  keyboard layout lacks.
+<p align="center">
+  <a href="https://github.com/sayre4ux/TypeThru/releases"><img src="https://img.shields.io/github/v/release/sayre4ux/TypeThru?include_prereleases&label=release&color=6b93ff" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/macOS-13%2B-1f2430" alt="macOS 13 or later">
+  <img src="https://img.shields.io/badge/Apple%20silicon%20%7C%20Intel-universal-1f2430" alt="Universal app">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1f2430" alt="MIT license"></a>
+</p>
 
-Virtual Keyboard has been tested with one VDI client connected to Windows. RDP and other
-clients are untested; reports are welcome.
+<p align="center">
+  <a href="https://github.com/sayre4ux/TypeThru/releases"><b>Download for macOS</b></a>
+  &nbsp;·&nbsp; <a href="#install">Install</a>
+  &nbsp;·&nbsp; <a href="#use">Use</a>
+  &nbsp;·&nbsp; <a href="#privacy-and-security">Privacy</a>
+</p>
+
+<p align="center">
+  <img src="docs/panel.png" width="340" alt="The TypeThru panel">
+</p>
+
+---
+
+Copy text on your Mac, click into the remote session, and press **Control+\\**. TypeThru
+presses each key for you, through a virtual USB keyboard that remote clients treat like the
+real thing.
+
+## Highlights
+
+| | |
+|---|---|
+| **Real key presses** | A virtual USB keyboard reaches remote clients that ignore software key events. |
+| **Human to unrealistic speed** | Five levels, from an average typist (50 WPM) to 600 WPM. |
+| **Smart symbols** | Bullets, smart quotes, dashes, and `…` are typed as the closest plain keys. |
+| **New lines, not sends** | Line breaks are typed as Shift+Return, so chat apps do not send early. |
+| **Stops when you do** | Esc, a mouse click, or switching apps or windows stops typing at once. |
+| **Nothing kept** | No clipboard history, no logs, no network access. |
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Clipboard on your Mac] --> B[TypeThru]
+    B -->|one key at a time| C[Virtual USB keyboard]
+    C --> D[VDI or remote desktop]
+```
+
+TypeThru checks the whole text against your keyboard layout first, then sends one key at a
+time to a small background helper. The helper presses the key on the Karabiner virtual
+keyboard driver, so the remote session receives it as a physical key.
+
+For apps on your own Mac, four **Quartz** methods post macOS key events instead. They need
+no setup, but many remote clients ignore them. *Unicode text events* can type characters that
+your keyboard layout lacks.
 
 ## Install
 
 Requires macOS 13 or later, on Apple silicon or Intel.
 
 1. Download `TypeThru-<version>.dmg` from
-   [Releases](https://github.com/sayre4ux/KeyTyper/releases) and open it.
+   [Releases](https://github.com/sayre4ux/TypeThru/releases) and open it.
 2. Drag **TypeThru** into **Applications**, eject the disk, and open TypeThru from
-   Applications. The TypeThru icon appears in the menu bar; click it to open the TypeThru panel.
+   Applications. The TypeThru icon appears in the menu bar; click it to open the panel.
 3. The beta is not notarized yet. If macOS says it cannot verify TypeThru, open
-   **System Settings > Privacy & Security**, scroll down, and choose **Open Anyway**. This is
+   **System Settings › Privacy & Security**, scroll down, and choose **Open Anyway**. This is
    needed once.
-4. Allow TypeThru in **System Settings > Privacy & Security > Accessibility** when asked.
+4. Allow TypeThru in **System Settings › Privacy & Security › Accessibility** when asked.
 5. When TypeThru offers Virtual Keyboard setup, choose **Set Up** and enter your administrator
    password.
 6. If macOS asks, allow the Karabiner driver in System Settings.
 7. In the panel, choose the **Short** typing test and click a text field in the remote session.
 
-### Build from source
-
-Requires the Xcode Command Line Tools (`xcode-select --install`). The first build downloads
-the virtual keyboard driver source, so it needs internet access. Run `./build.sh` to build
-`TypeThru.app`, or `./package.sh` to build the disk image.
+> [!NOTE]
+> Upgrading from KeyTyper? Delete the old app, open TypeThru, and run **Set Up** once. Setup
+> removes the old helper, and your settings are copied over.
 
 ## Use
 
 1. Copy text on your Mac.
 2. Click the text field in the remote session.
-3. Press **Control+\\**, or choose **Type Clipboard** in the TypeThru panel.
+3. Press **Control+\\**, or choose **Type Clipboard** in the panel.
 
-Press **Esc**, click the mouse, or switch apps or windows to stop. Keep the keyboard layout the
-same on the Mac and in the remote session.
+Press **Esc**, click the mouse, or switch apps or windows to stop. Keep the keyboard layout
+the same on the Mac and in the remote session.
 
-Line breaks are typed as Shift+Return, so chat apps make a new line instead of sending the
-message. Turn off **Type line breaks as Shift+Return** for spreadsheets, where Shift+Return
-moves up a cell, or for any app that needs a plain Return.
+### Settings
 
-**Speed** in the panel runs from *Average typist · 50 WPM*, the default, through fast and
-record typists to *Unrealistic · 600 WPM*. If characters are dropped, choose a slower speed.
+| Setting | Default | Notes |
+|---|---|---|
+| **Method** | Virtual Keyboard | Use a Quartz method only for apps on this Mac. |
+| **Speed** | Average typist · 50 WPM | If characters are dropped, choose a slower speed. |
+| **Replace symbols without a key** | On | `•` becomes `-`, `“` becomes `"`, `—` becomes `--`. Turn off when the text must match exactly. |
+| **Type line breaks as Shift+Return** | On | Turn off for spreadsheets, where Shift+Return moves up a cell. |
 
-Symbols with no key on your layout, such as bullets, smart quotes, dashes, and `…`, are
-typed as the closest plain keys (`•` becomes `-`, `“` becomes `"`). Turn off **Replace
-symbols without a key** when the text must match exactly. TypeThru types nothing if the text
-still contains a character with no key.
+| Speed | Per key | |
+|---|---|---|
+| Average typist · 50 WPM | 240 ms | The most reliable |
+| Fast typist · 100 WPM | 120 ms | The fastest 5% of typists |
+| Record typist · 200 WPM | 60 ms | World-record pace |
+| Superhuman · 400 WPM | 30 ms | Some remote sessions drop keys |
+| Unrealistic · 600 WPM | 20 ms | Expect dropped keys on slow connections |
+
+TypeThru types nothing if the text contains a character with no key, such as an accented
+letter missing from your layout. Try *Unicode text events* for those.
 
 ### Typing tests
 
@@ -78,22 +129,23 @@ All tests except Long run at the slowest speed, so the method is the only thing 
 
 | Problem | Fix |
 |---|---|
-| Check Virtual Keyboard says *not set up* | Choose **Set Up Virtual Keyboard…** |
-| It says *helper is not responding* | Wait a few seconds, check again, then rerun setup if needed |
-| It says *driver is not active yet* | Approve the Karabiner system extension in System Settings |
-| Diagnostics says all characters were sent, but nothing appeared | The remote text field did not have focus. Click it and retry. |
-| The shortcut stops working after a rebuild | See [Signing](#signing) |
+| The panel says *Set up needed* | Choose **Set Up Virtual Keyboard…** |
+| *Helper is not responding* | Wait a few seconds, check again, then rerun setup if needed |
+| *Driver is not active yet* | Allow the Karabiner driver in System Settings |
+| Nothing appears in the remote session | The remote text field did not have focus. Click it and retry. |
+| Typing does not start after an update | Turn TypeThru off and on again in **Accessibility** |
 | A remote app needs Control+\\ | Use **Type Clipboard** in the panel |
 
-**More > Last Attempt / Diagnostics** in the panel shows whether the shortcut arrived, which app was
-in front, and why typing stopped.
+**More › Last Attempt / Diagnostics** in the panel shows whether the shortcut arrived, which
+app was in front, and why typing stopped. Virtual Keyboard has been tested with one VDI client
+connected to Windows; reports from other clients are welcome.
 
 ## Uninstall
 
-Choose **More > Uninstall TypeThru…** in the panel and enter your administrator password. It removes
-the helper, settings, and the Accessibility entry, then quits. Tick **Also remove the Karabiner
-virtual keyboard driver** only if no other app, such as Karabiner-Elements, uses it. Then move
-TypeThru from Applications to the Trash.
+Choose **More › Uninstall TypeThru…** in the panel and enter your administrator password. It
+removes the helper, settings, and the Accessibility entry, then quits. Tick **Also remove the
+Karabiner virtual keyboard driver** only if no other app, such as Karabiner-Elements, uses it.
+Then move TypeThru from Applications to the Trash.
 
 ## Privacy and security
 
@@ -116,14 +168,25 @@ TypeThru sends key presses. It does not record them.
 
 Report security issues through GitHub private vulnerability reporting.
 
-## Signing
+## Build from source
+
+Requires the Xcode Command Line Tools (`xcode-select --install`). The first build downloads
+the virtual keyboard driver source, so it needs internet access.
+
+```sh
+./test.sh      # checks event construction; types nothing
+./build.sh     # builds TypeThru.app
+./package.sh   # builds the disk image
+```
+
+### Signing
 
 macOS ties the Accessibility permission to the app's signature. `build.sh` uses the first
 of these it finds:
 
 1. `TYPETHRU_SIGN_IDENTITY` (a certificate name or hash; `-` forces ad-hoc)
 2. a Developer ID Application certificate
-3. an Apple Development certificate (free with an Apple ID: Xcode > Settings > Accounts >
+3. an Apple Development certificate (free with an Apple ID: Xcode › Settings › Accounts ›
    Manage Certificates)
 4. ad-hoc signing
 

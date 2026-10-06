@@ -14,6 +14,7 @@ a few shell scripts) and has no package manager or Xcode project.
 | `Panel.swift` | Menu bar panel (SwiftUI, Liquid Glass on macOS 26+). A non-activating panel, so the target app stays in front |
 | `Brand.swift` | The TypeThru mark, shared by the menu bar icon and the app icon |
 | `icon/` | `make-icon.sh` redraws `AppIcon.icns` from `make-icon.swift`; rerun it after changing the mark |
+| `docs/` | README images: the app icon and a panel screenshot. Update them when the icon or panel changes |
 | `VirtualKeyboard.swift` | Client for the root helper: macOS keycode → HID usage map, socket exchange, status |
 | `helper/virtual-keyboard.cpp` | Root helper (launch daemon). Validates packets and posts HID reports to the Karabiner virtual keyboard |
 | `helper/install-helper.sh` | Root-side setup: driver package check/install, launch daemon |
