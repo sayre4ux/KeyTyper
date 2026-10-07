@@ -42,9 +42,11 @@ Upgrading from KeyTyper? Delete the old app and run **Set Up** once.
 2. Click a text field in the remote session.
 3. Press **Control+\\** (or your own shortcut).
 
-Click the menu bar icon to change the shortcut or speed, run a typing test, or turn options
-off. Control alone is the safest shortcut, because other modifier keys also reach the remote
-session.
+Click the menu bar icon to change the speed or run a typing test. Open **Settings** there to
+change the shortcut, open TypeThru at login, or turn options off. Control alone is the safest
+shortcut, because other modifier keys also reach the remote session.
+
+When a new version is out, the panel shows it with a **Download** button.
 
 ## Troubleshooting
 
@@ -59,10 +61,13 @@ session.
 - No event tap and no Input Monitoring. It only checks whether Esc, the modifier keys, the
   shortcut key, or a mouse button is held down, and while typing, which app and window are in
   front.
-- When you change the shortcut, the panel reads only the keys you press in it, until you
+- When you change the shortcut, Settings reads only the keys you press in it, until you
   choose one.
 - The clipboard is read only when you ask it to type, and is never saved or logged.
-- No network access.
+- The only network access is checking GitHub for a new version, at most once a day. The
+  request contains only the app name and version; GitHub sees your IP address, as with any
+  website. Turn it off in **Settings › Updates**. Nothing is downloaded or installed
+  automatically.
 - The virtual keyboard helper runs as root because the driver requires it. It accepts key
   presses only from your Mac account and cannot read keyboard input. Other apps running as you
   could also use it, so uninstall TypeThru when you no longer need it.
@@ -73,7 +78,7 @@ Report security issues through GitHub private vulnerability reporting.
 
 ## Uninstall
 
-Click the menu bar icon, choose **More › Uninstall TypeThru…**, then move the app to the Trash.
+Open **Settings** from the panel, choose **Uninstall TypeThru…**, then move the app to the Trash.
 
 ## Build from source
 

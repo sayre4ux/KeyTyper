@@ -4,17 +4,11 @@ import SwiftUI
 // Menu bar panel. It never activates TypeThru, so the app the user was typing into stays in front.
 
 enum PanelAction {
-    case typeClipboard, test(TypingTest), recordShortcut, resetShortcut, setUp, checkVirtualKeyboard, checkAccessibility, diagnostics, uninstall, quit
-
-    /// Shortcut changes happen inside the panel; everything else closes it first.
-    var keepsPanelOpen: Bool {
-        switch self {
-        case .recordShortcut, .resetShortcut: return true
-        default: return false
-        }
-    }
+    case typeClipboard, test(TypingTest), openSettings, openUpdate, quit
+    case recordShortcut, resetShortcut, checkForUpdates, setUp, checkVirtualKeyboard, checkAccessibility, diagnostics, uninstall
 }
 
+/// State shared by the panel and the Settings window.
 final class PanelModel: ObservableObject {
     struct Status: Equatable { var text: String; var ready: Bool; var needsSetUp = false }
     @Published var method = TypingMethod.virtualKeyboard
@@ -27,10 +21,21 @@ final class PanelModel: ObservableObject {
     @Published var shortcutIsStandard = true
     @Published var recording = false
     @Published var shortcutNote: String?
+    @Published var launchAtLogin = false
+    @Published var launchNote: String?
+    @Published var checkUpdates = true
+    @Published var update: Updates.Release?
+    @Published var updateStatus = ""
     var speeds: [String] = []
     var speedDetails: [String] = []
     var onChange: (() -> Void)?
     var perform: ((PanelAction) -> Void)?
+
+    /// A binding that reports every change, so settings are saved as soon as they change.
+    func binding<T>(_ keyPath: ReferenceWritableKeyPath<PanelModel, T>) -> Binding<T> {
+        Binding(get: { self[keyPath: keyPath] },
+                set: { self[keyPath: keyPath] = $0; self.onChange?() })
+    }
 }
 
 struct PanelView: View {
@@ -39,6 +44,7 @@ struct PanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
+            if let update = model.update { updateBanner(update) }
             Button { model.perform?(.typeClipboard) } label: {
                 HStack {
                     Image(systemName: "keyboard")
@@ -82,35 +88,27 @@ struct PanelView: View {
         }
     }
 
+    private func updateBanner(_ update: Updates.Release) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle.fill").foregroundStyle(Brand.accent).font(.title3)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Update available").font(.callout.weight(.semibold))
+                Text("Version \(update.version) · you have \(Updates.currentVersion)").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Download") { model.perform?(.openUpdate) }.prominentGlass().tint(Brand.accent).controlSize(.small)
+        }
+        .padding(10)
+        .glassRounded()
+    }
+
     private var settings: some View {
         VStack(alignment: .leading, spacing: 10) {
             if model.status.needsSetUp {
                 Button("Set Up Virtual Keyboard…") { model.perform?(.setUp) }.glassButton()
             }
-            LabeledContent("Shortcut") {
-                HStack(spacing: 6) {
-                    Text(model.recording ? "Press keys…" : model.shortcut)
-                        .font(.system(.callout, design: .rounded).weight(.medium))
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .glassCapsule()
-                    Button(model.recording ? "Cancel" : "Change") { model.perform?(.recordShortcut) }
-                        .glassButton().controlSize(.small)
-                    if !model.shortcutIsStandard && !model.recording {
-                        Button("Reset") { model.perform?(.resetShortcut) }.glassButton().controlSize(.small)
-                    }
-                }
-            }
-            if let note = model.shortcutNote {
-                Text(note).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-            }
-            LabeledContent("Method") {
-                Picker("Method", selection: binding(\.method)) {
-                    ForEach(TypingMethod.allCases, id: \.self) { Text($0.shortTitle).tag($0) }
-                }
-                .labelsHidden().fixedSize()
-            }
             LabeledContent("Speed") {
-                Picker("Speed", selection: binding(\.speedIndex)) {
+                Picker("Speed", selection: model.binding(\.speedIndex)) {
                     ForEach(model.speeds.indices, id: \.self) { Text(model.speeds[$0]).tag($0) }
                 }
                 .labelsHidden().fixedSize()
@@ -118,9 +116,7 @@ struct PanelView: View {
             if model.speedDetails.indices.contains(model.speedIndex) {
                 Text(model.speedDetails[model.speedIndex]).font(.caption).foregroundStyle(.secondary)
             }
-            Toggle("Replace symbols without a key (• → -)", isOn: binding(\.replaceSymbols))
-                .toggleStyle(.switch).controlSize(.small).tint(Brand.accent)
-            Toggle("Type line breaks as Shift+Return", isOn: binding(\.shiftReturn))
+            Toggle("Type line breaks as Shift+Return", isOn: model.binding(\.shiftReturn))
                 .toggleStyle(.switch).controlSize(.small).tint(Brand.accent)
                 .help("Makes a new line instead of sending in chat apps. Turn off for spreadsheets, where Shift+Return moves up a cell.")
         }
@@ -150,27 +146,14 @@ struct PanelView: View {
 
     private var footer: some View {
         HStack {
-            Menu {
-                Button("Set Up Virtual Keyboard…") { model.perform?(.setUp) }
-                Button("Check Virtual Keyboard") { model.perform?(.checkVirtualKeyboard) }
-                Button("Check Accessibility Permission") { model.perform?(.checkAccessibility) }
-                Button("Last Attempt / Diagnostics") { model.perform?(.diagnostics) }
-                Divider()
-                Button("Uninstall TypeThru…") { model.perform?(.uninstall) }
-            } label: {
-                Label("More", systemImage: "ellipsis.circle")
-            }
-            .menuStyle(.borderlessButton).fixedSize()
+            Button { model.perform?(.openSettings) } label: { Label("Settings", systemImage: "gearshape") }
+                .glassButton()
             Spacer()
             Button("Quit") { model.perform?(.quit) }.glassButton()
         }
         .font(.callout)
     }
 
-    private func binding<T>(_ keyPath: ReferenceWritableKeyPath<PanelModel, T>) -> Binding<T> {
-        Binding(get: { model[keyPath: keyPath] },
-                set: { model[keyPath: keyPath] = $0; model.onChange?() })
-    }
 }
 
 // Liquid Glass on macOS 26 and later; system materials before that.
@@ -185,6 +168,11 @@ private extension View {
 
     @ViewBuilder func noFocusRing() -> some View {
         if #available(macOS 14, *) { focusEffectDisabled() } else { self }
+    }
+
+    @ViewBuilder func glassRounded() -> some View {
+        if #available(macOS 26, *) { glassEffect(.regular.tint(Brand.accent.opacity(0.18)), in: .rect(cornerRadius: 16)) }
+        else { background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous)) }
     }
 
     @ViewBuilder func glassCapsule() -> some View {

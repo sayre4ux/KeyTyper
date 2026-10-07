@@ -3,7 +3,7 @@
 Guidance for AI coding agents working on TypeThru. Read this before changing code.
 
 TypeThru is a macOS menu bar app that types the clipboard as key presses into VDI and remote
-desktop sessions where paste does not work. It is small (four Swift files, one C++ helper,
+desktop sessions where paste does not work. It is small (six Swift files, one C++ helper,
 a few shell scripts) and has no package manager or Xcode project.
 
 ## Layout
@@ -12,6 +12,8 @@ a few shell scripts) and has no package manager or Xcode project.
 |---|---|
 | `main.swift` | App: key map from the active layout, Quartz typing methods, typing tests, global hotkey, onboarding, diagnostics |
 | `Panel.swift` | Menu bar panel (SwiftUI, Liquid Glass on macOS 26+). A non-activating panel, so the target app stays in front |
+| `Settings.swift` | Settings window (SwiftUI form) for rarely changed options; shares the panel's model |
+| `Updates.swift` | Daily check of the GitHub releases API; shows a Download button, never installs |
 | `Brand.swift` | The TypeThru mark, shared by the menu bar icon and the app icon |
 | `icon/` | `make-icon.sh` redraws `AppIcon.icns` from `make-icon.swift`; rerun it after changing the mark |
 | `docs/` | README images: logos (made by `icon/make-icon.sh`) and a panel screenshot. Update them when the icon or panel changes |
@@ -63,8 +65,8 @@ Run `./test.sh` and `./build.sh` after every code change. Both must pass.
 ## Architecture
 
 **Trigger.** A Carbon hotkey fires on key release. It is `Shortcut.standard` (Control+\)
-unless the user records another in the panel (`Shortcut`, saved as `shortcutKey` and
-`shortcutModifiers`); recording uses a local key monitor on the panel only, with the hotkey
+unless the user records another in Settings (`Shortcut`, saved as `shortcutKey` and
+`shortcutModifiers`); recording uses a local key monitor on the Settings window only, with the hotkey
 unregistered meanwhile. The app waits until all
 modifiers and the hotkey key are up, then types into the app that was in front when the
 shortcut was pressed. `StopWatcher` polls every 10 ms while typing and stops on Esc, a new
@@ -104,15 +106,16 @@ apps (such as Karabiner-Elements) may depend on it.
 
 ## Design rules and why
 
-- **The default shortcut uses Control as its only modifier.** Users may choose others; the
-  panel warns about Option, Command, and Shift, and refuses Esc and keys with no modifier
+- **The default shortcut uses Control as its only modifier.** Users may choose others;
+  Settings warns about Option, Command, and Shift, and refuses Esc and keys with no modifier
   except F1–F20. The hotkey consumes its key but not
   its modifiers, and those still reach the remote session. A lone Alt (Option) opens the
   Windows menu bar and swallows the typed text; Command may map to the Windows key; Shift
   combined with Ctrl or Alt can switch the keyboard layout. The key itself must not be a
   common Windows shortcut, because the global hotkey hides it from the remote app.
-- **The README's "Privacy" section is a contract.** No event taps, no Input
-  Monitoring, no network access at runtime, no clipboard persistence or logging, and a
+- **The README's "Privacy" section is a contract.** No event taps, no Input Monitoring, no
+  network access at runtime except the update check (GitHub releases API, at most daily, can
+  be turned off, never downloads or installs), no clipboard persistence or logging, and a
   helper that can only send keys. If a change would break any of these, stop and ask. If a
   change alters what the app can see or do, update that section in the same change. Avoid
   wording in code and docs that suggests capturing or recording input.

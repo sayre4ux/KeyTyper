@@ -4,7 +4,7 @@ set -eu
 cd "$(dirname "$0")"
 TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/typethru-tests.XXXXXX")
 trap 'rm -rf "$TEST_DIR"' EXIT HUP INT TERM
-cat VirtualKeyboard.swift Panel.swift Brand.swift > "$TEST_DIR/main.swift"
+cat VirtualKeyboard.swift Panel.swift Settings.swift Updates.swift Brand.swift > "$TEST_DIR/main.swift"
 sed '/^\/\/ MARK: - Entry point/,$d' main.swift >> "$TEST_DIR/main.swift"
 cat >> "$TEST_DIR/main.swift" <<'SWIFT'
 
@@ -193,6 +193,25 @@ section("Custom shortcut") {
     check(Shortcut(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey)).title == "⌃Space", "named keys")
     let fromEvent = Shortcut(keyCode: UInt16(kVK_ANSI_K), flags: [.control, .option])
     check(fromEvent == Shortcut(keyCode: UInt32(kVK_ANSI_K), modifiers: UInt32(controlKey | optionKey)), "event flags convert to Carbon")
+}
+
+section("Update check") {
+    check(Updates.numbers("v0.3.0-beta") == [0, 3, 0] && Updates.numbers("0.3") == [0, 3], "version numbers")
+    check(Updates.isNewer("0.4", than: "0.3") && Updates.isNewer("0.3.1", than: "0.3"), "newer versions")
+    check(!Updates.isNewer("0.3.0", than: "0.3") && !Updates.isNewer("0.2.9", than: "0.3"), "same or older")
+    check(Updates.isNewer("1.0", than: "0.10") && !Updates.isNewer("0.9", than: "0.10"), "numeric, not text, order")
+    let json = """
+    [{"tag_name": "v0.3.0-beta", "html_url": "https://github.com/sayre4ux/KeyTyper/releases/tag/v0.3.0-beta", "draft": false},
+     {"tag_name": "v0.5.0-beta", "html_url": "https://github.com/sayre4ux/TypeThru/releases/tag/v0.5.0-beta", "draft": true},
+     {"tag_name": "v0.9.0", "html_url": "https://evil.example/releases/v0.9.0", "draft": false},
+     {"tag_name": "v0.8.0", "html_url": "http://github.com/sayre4ux/KeyTyper/releases/tag/v0.8.0", "draft": false},
+     {"tag_name": "v0.4.1", "html_url": "https://github.com/sayre4ux/TypeThru/releases/tag/v0.4.1", "draft": false},
+     {"tag_name": "nightly", "html_url": "https://github.com/sayre4ux/TypeThru/releases/tag/nightly"}]
+    """
+    let newest = Updates.newest(from: Data(json.utf8))
+    check(newest?.version == "0.4.1", "newest release, skipping drafts, other sites, plain http, and untagged")
+    check(newest?.page.absoluteString == "https://github.com/sayre4ux/TypeThru/releases/tag/v0.4.1", "release page")
+    check(Updates.newest(from: Data("not json".utf8)) == nil && Updates.newest(from: Data("[]".utf8)) == nil, "bad or empty response")
 }
 
 section("Speed levels and Virtual Keyboard timing") {

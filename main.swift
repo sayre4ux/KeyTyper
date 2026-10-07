@@ -2,6 +2,7 @@
 
 import AppKit
 import Carbon.HIToolbox
+import ServiceManagement
 
 // MARK: - Key map
 
@@ -455,6 +456,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "typingMethodV2") }
     }
     private let panel = PanelController()
+    private let settingsWindow = SettingsWindowController()
+    private var updateTimer: Timer?
     private var shortcutRecorder: Any?
     private var panelClosedAt = Date.distantPast
     // DECISION: time per character at 5 characters per word. A study of 168,000 typists
@@ -476,6 +479,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     // DECISION: on by default (user request): Shift+Return makes a new line in chat apps and word
     // processors instead of sending. Spreadsheets move up a cell, so the panel can turn it off.
+    private var checkUpdates: Bool {
+        get { UserDefaults.standard.object(forKey: "checkUpdates") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "checkUpdates") }
+    }
     private var shiftReturn: Bool {
         get { UserDefaults.standard.object(forKey: "shiftReturn") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "shiftReturn") }
@@ -495,10 +502,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onHotKey = { [weak self] in self?.trigger(fromMenu: false) }
         let shortcut = Shortcut.load()
         if !registerHotKey(shortcut) {
-            alert("Could not use \(shortcut.title)", "macOS returned error \(hotKeyRegistrationStatus). Another app may use this shortcut. Click the TypeThru icon in the menu bar to choose a different one.")
+            alert("Could not use \(shortcut.title)", "macOS returned error \(hotKeyRegistrationStatus). Another app may use this shortcut. Choose a different one in TypeThru Settings.")
         }
         if !AXIsProcessTrusted() { promptForAccessibility() }
         continueOnboarding()
+        scheduleUpdateChecks()
     }
 
     /// An app opened from the disk image, or one macOS moved to a temporary copy, loses its
@@ -557,28 +565,98 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.interval = self.speeds[model.speedIndex].interval
             self.replaceSymbols = model.replaceSymbols
             self.shiftReturn = model.shiftReturn
+            if model.checkUpdates != self.checkUpdates {
+                self.checkUpdates = model.checkUpdates
+                if model.checkUpdates { self.checkForUpdates(manual: false) }
+            }
+            if model.launchAtLogin != (SMAppService.mainApp.status == .enabled) { self.setLaunchAtLogin(model.launchAtLogin) }
             if methodChanged { self.refreshStatus() }
         }
         model.perform = { [weak self] action in self?.perform(action) }
+        settingsWindow.onClose = { [weak self] in
+            if self?.shortcutRecorder != nil { self?.finishRecording(nil) }
+        }
+        syncModel()
+    }
+
+    /// Copies saved settings into the model the panel and Settings window show.
+    private func syncModel() {
+        let model = panel.model
+        model.method = method
+        model.speedIndex = speeds.firstIndex { abs($0.interval - interval) < 0.0001 } ?? 0
+        model.replaceSymbols = replaceSymbols
+        model.shiftReturn = shiftReturn
+        model.checkUpdates = checkUpdates
+        model.launchAtLogin = SMAppService.mainApp.status == .enabled
+        model.busy = busy
+        model.shortcut = currentShortcut.title
+        model.shortcutIsStandard = currentShortcut == .standard
+    }
+
+    private func openSettings() {
+        syncModel()
+        panel.model.shortcutNote = nil
+        panel.model.launchNote = SMAppService.mainApp.status == .requiresApproval
+            ? "Allow TypeThru in System Settings › General › Login Items." : nil
+        settingsWindow.show(model: panel.model)
+        refreshStatus()
+    }
+
+    private func setLaunchAtLogin(_ on: Bool) {
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            panel.model.launchNote = SMAppService.mainApp.status == .requiresApproval
+                ? "Allow TypeThru in System Settings › General › Login Items." : nil
+        } catch {
+            panel.model.launchNote = "macOS did not allow this: \(error.localizedDescription)"
+        }
+        panel.model.launchAtLogin = SMAppService.mainApp.status == .enabled
+    }
+
+    // MARK: Updates
+
+    /// Checks at launch and then hourly, but asks GitHub at most once a day.
+    private func scheduleUpdateChecks() {
+        if let version = UserDefaults.standard.string(forKey: "availableVersion"),
+           let link = UserDefaults.standard.string(forKey: "availablePage"), let page = URL(string: link),
+           Updates.isNewer(version, than: Updates.currentVersion) {
+            panel.model.update = Updates.Release(version: version, page: page)
+            panel.model.updateStatus = "Version \(version) is available."
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { self.checkForUpdates(manual: false) }
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+            self?.checkForUpdates(manual: false)
+        }
+    }
+
+    private func checkForUpdates(manual: Bool) {
+        let defaults = UserDefaults.standard
+        if !manual {
+            guard checkUpdates else { return }
+            if let last = defaults.object(forKey: "lastUpdateCheck") as? Date, Date().timeIntervalSince(last) < 20 * 3600 { return }
+        }
+        panel.model.updateStatus = "Checking…"
+        Updates.check { [weak self] result in
+            guard let model = self?.panel.model else { return }
+            switch result {
+            case .success(let release):
+                defaults.set(Date(), forKey: "lastUpdateCheck")
+                defaults.set(release?.version, forKey: "availableVersion")
+                defaults.set(release?.page.absoluteString, forKey: "availablePage")
+                model.update = release
+                model.updateStatus = release.map { "Version \($0.version) is available." } ?? "TypeThru is up to date."
+            case .failure:
+                model.updateStatus = "Could not reach GitHub. Try again later."
+            }
+        }
     }
 
     @objc private func togglePanel() {
         guard let button = statusItem.button else { return }
         // A click on the menu bar icon first closes the open panel; do not reopen it.
         if panel.isShown || Date().timeIntervalSince(panelClosedAt) < 0.3 { panel.close(); return }
-        let model = panel.model
-        model.method = method
-        model.speedIndex = speeds.firstIndex { abs($0.interval - interval) < 0.0001 } ?? 0
-        model.replaceSymbols = replaceSymbols
-        model.shiftReturn = shiftReturn
-        model.busy = busy
-        model.shortcut = currentShortcut.title
-        model.shortcutIsStandard = currentShortcut == .standard
-        model.shortcutNote = nil
-        panel.onClose = { [weak self] in
-            self?.panelClosedAt = Date()
-            if self?.shortcutRecorder != nil { self?.finishRecording(nil) }
-        }
+        syncModel()
+        panel.onClose = { [weak self] in self?.panelClosedAt = Date() }
         panel.show(below: button)
         refreshStatus()
     }
@@ -597,7 +675,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Records the next key press in the panel as the shortcut. Only TypeThru's own panel sees it;
+    /// Records the next key press in Settings as the shortcut. Only TypeThru's own window sees it;
     /// the hotkey is off meanwhile, so pressing the old shortcut does not start typing.
     private func startRecording() {
         unregisterHotKey()
@@ -644,10 +722,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func perform(_ action: PanelAction) {
-        if !action.keepsPanelOpen { panel.close() }
+        panel.close()
         switch action {
         case .recordShortcut: if shortcutRecorder == nil { startRecording() } else { finishRecording(nil) }
         case .resetShortcut: apply(.standard)
+        case .openSettings: openSettings()
+        case .checkForUpdates: checkForUpdates(manual: true)
+        case .openUpdate: if let page = panel.model.update?.page { NSWorkspace.shared.open(page) }
         case .typeClipboard: trigger(fromMenu: true)
         case .test(let test): trigger(fromMenu: true, test: test)
         case .setUp: setupVirtualKeyboard()
@@ -664,7 +745,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let sheet = NSAlert()
         sheet.messageText = "Set up TypeThru Virtual Keyboard"
-        sheet.informativeText = "Virtual Keyboard types through a virtual USB keyboard, so VDI and remote desktop clients receive real key presses.\n\n1. Choose Set Up and enter your Mac administrator password. This installs a small background helper and the Karabiner virtual keyboard driver. An already installed driver is reused.\n2. If macOS asks, allow the Karabiner driver in System Settings.\n3. In the TypeThru panel, choose the Short typing test, then click a text field in your remote session.\n\nTypeThru itself stays unprivileged. A small helper runs in the background and accepts keyboard reports only from your Mac user account. TypeThru only sends key presses. It never reads what you type, and clipboard text is never written to files or logs. Keep the keyboard layout on this Mac and in the remote session the same.\n\nTo remove everything later, choose More > Uninstall TypeThru… in the TypeThru panel."
+        sheet.informativeText = "Virtual Keyboard types through a virtual USB keyboard, so VDI and remote desktop clients receive real key presses.\n\n1. Choose Set Up and enter your Mac administrator password. This installs a small background helper and the Karabiner virtual keyboard driver. An already installed driver is reused.\n2. If macOS asks, allow the Karabiner driver in System Settings.\n3. In the TypeThru panel, choose the Short typing test, then click a text field in your remote session.\n\nTypeThru itself stays unprivileged. A small helper runs in the background and accepts keyboard reports only from your Mac user account. TypeThru only sends key presses. It never reads what you type, and clipboard text is never written to files or logs. Keep the keyboard layout on this Mac and in the remote session the same.\n\nTo remove everything later, open Settings from the TypeThru panel and choose Uninstall TypeThru…."
         sheet.addButton(withTitle: "Set Up")
         sheet.addButton(withTitle: "Later")
         guard sheet.runModal() == .alertFirstButtonReturn else { return }
@@ -693,7 +774,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let sheet = NSAlert()
         sheet.messageText = "Allow the Karabiner driver"
-        sheet.informativeText = "The helper is installed. In System Settings, allow the Karabiner virtual keyboard driver (General > Login Items & Extensions > Driver Extensions, or Privacy & Security). Then choose More > Check Virtual Keyboard in the TypeThru panel."
+        sheet.informativeText = "The helper is installed. In System Settings, allow the Karabiner virtual keyboard driver (General > Login Items & Extensions > Driver Extensions, or Privacy & Security). Then choose Check under Virtual Keyboard in TypeThru Settings."
         sheet.addButton(withTitle: "Open System Settings")
         sheet.addButton(withTitle: "Later")
         guard sheet.runModal() == .alertFirstButtonReturn else { return }
