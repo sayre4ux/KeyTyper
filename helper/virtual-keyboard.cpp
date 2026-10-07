@@ -13,6 +13,7 @@
 #include <thread>
 #include <unistd.h>
 #include <pqrs/karabiner/driverkit/virtual_hid_device_service.hpp>
+#include "protocol.hpp"
 extern char** environ;
 namespace dk = pqrs::karabiner::driverkit;
 using namespace std::chrono_literals;
@@ -20,13 +21,6 @@ volatile sig_atomic_t stopping = 0;
 constexpr auto socketPath = "/var/run/io.github.sayre4ux.typethru.virtual-keyboard.sock";
 constexpr auto daemonPath = "/Library/Application Support/org.pqrs/Karabiner-DriverKit-VirtualHIDDevice/Applications/Karabiner-VirtualHIDDevice-Daemon.app/Contents/MacOS/Karabiner-VirtualHIDDevice-Daemon";
 
-bool valid(const uint8_t* p) {
-    if (p[0] != 1) return false;
-    if (p[1] == 0) return true; // readiness probe
-    unsigned hold = p[4] | (p[5] << 8), gap = p[6] | (p[7] << 8);
-    return p[1] == 1 && ((p[2] >= 4 && p[2] <= 56) || p[2] == 100)
-        && (p[3] == 0 || p[3] == 2) && hold >= 10 && hold <= 200 && gap <= 500;
-}
 int connectSocket(const char* path) {
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) return -1;

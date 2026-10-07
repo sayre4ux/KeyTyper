@@ -136,7 +136,9 @@ enum VirtualKeyboard {
 
     /// Splits the time per character into key hold and gap, both in ms, within the helper's limits.
     static func timing(for interval: TimeInterval) -> (hold: UInt16, gap: UInt16) {
-        let total = max(20, min(580, Int((interval * 1000).rounded())))
+        // Clamp before converting: a damaged saved setting (huge, infinite, or NaN) must not crash.
+        let milliseconds = interval.isNaN ? 240 : min(580, max(20, interval * 1000))
+        let total = Int(milliseconds.rounded())
         // DECISION: keep the proven 80 ms hold when there is time; faster speeds hold for half the interval.
         let hold = min(80, total / 2)
         return (UInt16(hold), UInt16(total - hold))

@@ -275,7 +275,76 @@ section("Setup runs only unchanged files") {
     check(command() == nil, "a malformed fingerprint is refused")
 }
 
+// Fuzz: random input must never crash, and results must keep their rules. Fixed seed, so a
+// failure reproduces.
+section("Fuzz: update answers, text, shortcuts, speeds, shell quoting") {
+    var seed: UInt64 = 0x5459504554485255
+    func random() -> UInt64 {
+        seed &+= 0x9e3779b97f4a7c15
+        var z = seed
+        z = (z ^ (z >> 30)) &* 0xbf58476d1ce4e5b9
+        z = (z ^ (z >> 27)) &* 0x94d049bb133111eb
+        return z ^ (z >> 31)
+    }
+    func pick<T>(_ items: [T]) -> T { items[Int(random() % UInt64(items.count))] }
+    let pieces = ["a", "Z", "9", " ", "\n", "\r\n", "\t", "'", "\"", "\\", "$", "`", "$(x)", ";", "&&", "|", "*", "•", "—",
+                  "“", "…", "\u{2028}", "\u{200B}", "\u{00A0}", "é", "e\u{301}", "中", "🙂", "👨‍👩‍👧‍👦", "\u{0}", "\u{7F}", "%", "{", "]"]
+    func text(_ maximum: Int) -> String { (0..<Int(random() % UInt64(maximum + 1))).map { _ in pick(pieces) }.joined() }
+
+    for _ in 0..<3000 {
+        // Random bytes and random release lists: never crash, and only TypeThru pages come back.
+        let bytes = Data((0..<Int(random() % 64)).map { _ in UInt8(truncatingIfNeeded: random()) })
+        check(Updates.newest(from: bytes).map { Updates.isReleasePage($0.page) } ?? true, "random bytes")
+        let item: [String: Any] = ["tag_name": pick(["v1.2", text(6), "0.\(random() % 99)", ""]),
+                                   "html_url": pick(["https://github.com/sayre4ux/TypeThru/releases/tag/v1",
+                                                     "https://github.com/sayre4ux/other/releases/v9", "javascript:alert(1)",
+                                                     "file:///etc/passwd", "https://evil.example/" + text(4), text(8)]),
+                                   "draft": pick([false, true])]
+        let json = try! JSONSerialization.data(withJSONObject: [item, item])
+        if let release = Updates.newest(from: json) {
+            check(Updates.isReleasePage(release.page) && !Updates.numbers(release.version).isEmpty, "only TypeThru pages")
+        }
+        let a = text(5), b = text(5)
+        check(!(Updates.isNewer(a, than: b) && Updates.isNewer(b, than: a)), "version order is consistent")
+
+        // Random clipboard text: every character is either typed or reported, Shift always released.
+        let clip = text(40)
+        for method in keyMethods {
+            let replaced = typer.replacingUntypable(in: clip, map: us, method: method).text
+            let missing = Set(typer.unsupported(in: replaced, map: us, method: method))
+            check(replaced.allSatisfy { typer.typeable($0, map: us, method: method) || missing.contains($0) }, "typed or reported")
+        }
+        for ch in clip where typer.typeable(ch, map: us, method: .hid) {
+            let events = typer.events(for: ch, map: us, method: .hid, delay: 0) ?? []
+            check(events.last.map { $0.0.flags.isEmpty } ?? false, "no modifier left held")
+        }
+
+        // Random shortcuts and speeds.
+        let shortcut = Shortcut(keyCode: UInt32(random() % 256), modifiers: UInt32(random() % 0x2000))
+        check(!shortcut.title.isEmpty, "shortcut title")
+        let interval = pick([Double(random() % 10_000) / 1000, -1, 0, .infinity, -.infinity, .nan, 1e300, -1e300])
+        let timing = VirtualKeyboard.timing(for: interval)
+        check((10...200).contains(timing.hold) && timing.gap <= 500, "timing within helper limits for \(interval)")
+        check(Typer.delay(for: interval).isNaN || Typer.delay(for: interval) >= 0, "Quartz delay not negative")
+    }
+
+    // Random arguments reach the root command intact: the shell reads back exactly what was quoted.
+    for _ in 0..<150 {
+        let argument = text(12).replacingOccurrences(of: "\u{0}", with: "")
+        let process = Process(), pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "printf %s " + VirtualKeyboard.shellQuoted(argument)]
+        process.standardOutput = pipe
+        try? process.run(); process.waitUntilExit()
+        check(String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self) == argument,
+              "shell quoting round trip for \(argument.debugDescription)")
+    }
+}
+
 print("PASS: \(checks) checks. No events posted.")
 SWIFT
+clang++ -std=c++23 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all \
+    helper/fuzz-protocol.cpp -o "$TEST_DIR/fuzz-protocol"
+"$TEST_DIR/fuzz-protocol"
 swiftc -module-cache-path "$TEST_DIR/module-cache" "$TEST_DIR/main.swift" -o "$TEST_DIR/tests"
 TEST_DIR="$TEST_DIR" "$TEST_DIR/tests"

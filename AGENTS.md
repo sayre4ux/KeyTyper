@@ -19,11 +19,13 @@ a few shell scripts) and has no package manager or Xcode project.
 | `docs/` | README images: logos (made by `icon/make-icon.sh`) and a panel screenshot. Update them when the icon or panel changes |
 | `VirtualKeyboard.swift` | Client for the root helper: macOS keycode → HID usage map, socket exchange, status |
 | `helper/virtual-keyboard.cpp` | Root helper (launch daemon). Validates packets and posts HID reports to the Karabiner virtual keyboard |
+| `helper/protocol.hpp` | The packet check `valid()`, shared by the helper and its fuzz test |
+| `helper/fuzz-protocol.cpp` | Fuzz test for `valid()` against the protocol table, run by `test.sh` with AddressSanitizer and UBSan |
 | `helper/install-helper.sh` | Root-side setup: driver package check/install, launch daemon |
 | `helper/uninstall-helper.sh` | Root-side uninstall: helper, and the driver when asked |
 | `build.sh` | Fetches the driver source at a pinned revision, builds and signs a universal `TypeThru.app` |
 | `package.sh` | Runs `build.sh` and makes the download disk image; notarizes it when configured |
-| `test.sh` | Compiles `main.swift` without its entry point and checks event construction |
+| `test.sh` | Compiles `main.swift` without its entry point and checks event construction; also runs the fuzz tests (fixed seed, so failures reproduce) |
 
 Identifiers: bundle ID `io.github.sayre4ux.typethru`, launch daemon label and socket
 `io.github.sayre4ux.typethru.virtual-keyboard`, helper binary `TypeThru-VirtualKeyboard`.
@@ -103,8 +105,8 @@ against those hashes, and runs only the copies; `test.sh` exercises this as the 
 files. `install-helper.sh` also requires the driver package to be signed by its developer
 (team G43BCU2T37). When adding a file that setup runs or installs, add it to both lists.
 
-Keep the two sides in sync. A protocol change touches `VirtualKeyboard.swift`, `valid()` and
-`--check-protocol` in the helper, and needs the user to rerun setup, because the installed
+Keep the two sides in sync. A protocol change touches `VirtualKeyboard.swift`, `valid()` in
+`helper/protocol.hpp`, the reference rules in `helper/fuzz-protocol.cpp`, `--check-protocol`, and needs the user to rerun setup, because the installed
 helper in `/Library/PrivilegedHelperTools` is a copy that `build.sh` does not update.
 
 **Driver version** is pinned in three places: `REV` in `build.sh`, the package name in
