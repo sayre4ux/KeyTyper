@@ -22,6 +22,19 @@
 - **New lines, not sends**: line breaks are typed as Shift+Return.
 - **Stops instantly** when you press Esc, click, or switch apps.
 - **Your shortcut**: Control+\\ by default, or choose your own.
+- **Lightweight**: about 6 MB, under 50 MB of memory, and no CPU while idle.
+
+## Use cases
+
+- **VDI and remote desktops** where the clipboard is turned off.
+- **Virtual machine and server consoles**, before guest tools are installed or through a
+  web-based KVM.
+- **Forms and apps that block paste**, such as confirm-password fields.
+- **Long codes**: license keys, recovery keys, and one-time setup codes.
+- **Demos and recordings**: natural, human-speed typing for tutorials and live coding.
+- **Accessibility**: send prepared text when typing it by hand is hard.
+
+Check your workplace's IT policy before using TypeThru on a managed computer or session.
 
 ## Install
 
@@ -32,7 +45,11 @@ Requires macOS 13 or later.
 3. If macOS says it cannot verify TypeThru, go to **System Settings › Privacy & Security**
    and choose **Open Anyway**.
 4. Allow TypeThru in **Accessibility** when asked.
-5. Choose **Set Up** and enter your password to install the virtual keyboard.
+5. Choose **Set Up** and enter your password. This installs the virtual keyboard driver,
+   which is included in the app.
+6. If macOS asks, allow the Karabiner driver in **System Settings**.
+
+No Terminal is needed; everything happens in the app and System Settings.
 
 Upgrading from KeyTyper? Delete the old app and run **Set Up** once.
 
