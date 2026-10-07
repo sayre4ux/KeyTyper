@@ -102,7 +102,7 @@ Open **Settings** from the panel, choose **Uninstall TypeThru…**, then move th
 ## Build from source
 
 ```sh
-./test.sh && ./build.sh
+make test && make build
 ```
 
 Needs the Xcode Command Line Tools. See [AGENTS.md](AGENTS.md) for how it works, signing,

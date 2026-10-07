@@ -26,7 +26,7 @@ fi
 /bin/rm -f /Library/LaunchDaemons/local.keytyper.virtual-keyboard.plist \
     /Library/PrivilegedHelperTools/KeyTyper-VirtualKeyboard /var/run/local.keytyper.virtual-keyboard.sock
 # Wait for the old helper to release its socket/owned daemon before replacing it.
-for i in {1..50}; do
+for _ in {1..50}; do
     [[ ! -S /var/run/io.github.sayre4ux.typethru.virtual-keyboard.sock ]] && break
     sleep 0.1
 done

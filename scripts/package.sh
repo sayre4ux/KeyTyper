@@ -3,8 +3,8 @@
 # With a Developer ID certificate and TYPETHRU_NOTARY_PROFILE (a notarytool keychain profile),
 # the disk image is also notarized, so it opens without a Gatekeeper warning.
 set -e
-cd "$(dirname "$0")"
-./build.sh
+cd "$(dirname "$0")/.."
+scripts/build.sh
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' TypeThru.app/Contents/Info.plist)
 DMG="TypeThru-$VERSION.dmg"
 # DECISION: a fresh staging folder in TMPDIR, which macOS cleans, instead of deleting folders here.

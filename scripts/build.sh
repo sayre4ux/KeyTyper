@@ -1,14 +1,15 @@
 #!/bin/sh
-# Builds TypeThru.app next to this script.
+# Builds TypeThru.app in the project root.
 set -e
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 for tool in git clang++ swiftc codesign; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "Missing $tool. Install the Xcode Command Line Tools with: xcode-select --install"
         exit 1
     }
 done
-APP=TypeThru.app
+# DECISION: make check builds a throwaway copy elsewhere, which must not reset Accessibility.
+APP=${TYPETHRU_APP:-TypeThru.app}
 
 # A stable signing identity lets macOS keep the Accessibility permission across builds.
 # Any code signing certificate works: paid Developer ID, free Apple Development, or self-signed.
@@ -56,7 +57,7 @@ rm -f "$APP/Contents/Resources/"*.command "$APP/Contents/Resources/"*.sh "$APP/C
 cp helper/install-helper.sh helper/uninstall-helper.sh "$APP/Contents/Resources/"
 cp "$SOURCE/dist/Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg" "$APP/Contents/Resources/"
 cp "$SOURCE/LICENSE.md" "$APP/Contents/Resources/Karabiner-LICENSE.txt"
-cp icon/AppIcon.icns "$APP/Contents/Resources/"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 # Fingerprints of the files setup runs as root. The app checks root-owned copies against them,
 # because the installed bundle is writable by the user (see VirtualKeyboard.adminCommand).
 {
@@ -71,7 +72,7 @@ cp icon/AppIcon.icns "$APP/Contents/Resources/"
 } > .build/ResourceHashes.swift
 for arch in arm64 x86_64; do
     swiftc -O -target "$arch-apple-macos13.0" -module-cache-path "$PWD/.build/module-cache" \
-        main.swift VirtualKeyboard.swift Panel.swift Settings.swift Updates.swift Brand.swift .build/ResourceHashes.swift -o ".build/TypeThru-$arch"
+        Sources/*.swift .build/ResourceHashes.swift -o ".build/TypeThru-$arch"
 done
 lipo -create .build/TypeThru-arm64 .build/TypeThru-x86_64 -output "$APP/Contents/MacOS/TypeThru"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
@@ -95,11 +96,12 @@ sign --identifier io.github.sayre4ux.typethru "$APP"
 
 # macOS ties the Accessibility permission to the signature. When the new build cannot reuse the
 # old permission (ad-hoc, or a different identity), clear the stale entry so macOS asks cleanly.
+echo "Built $(pwd)/$APP"
+[ "$APP" = TypeThru.app ] || exit 0
 LAST=$(cat .build/last-sign-identity 2>/dev/null || true)
 if [ "$IDENTITY" = - ] || [ "$IDENTITY" != "$LAST" ]; then
     tccutil reset Accessibility io.github.sayre4ux.typethru >/dev/null 2>&1 || true
     echo 'Cleared the old Accessibility permission. Allow TypeThru again when it asks.'
 fi
 printf '%s\n' "$IDENTITY" > .build/last-sign-identity
-echo "Built $(pwd)/$APP"
 pgrep -x TypeThru >/dev/null && echo 'TypeThru is still running the previous build. Quit and reopen it.' || true

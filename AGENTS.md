@@ -4,28 +4,34 @@ Guidance for AI coding agents working on TypeThru. Read this before changing cod
 
 TypeThru is a macOS menu bar app that types the clipboard as key presses into VDI and remote
 desktop sessions where paste does not work. It is small (six Swift files, one C++ helper,
-a few shell scripts) and has no package manager or Xcode project.
+a few shell scripts) and has no package manager or Xcode project; a `Makefile` runs everything.
 
 ## Layout
 
 | Path | Role |
 |---|---|
-| `main.swift` | App: key map from the active layout, Quartz typing methods, typing tests, global hotkey, onboarding, diagnostics |
-| `Panel.swift` | Menu bar panel (SwiftUI, Liquid Glass on macOS 26+). A non-activating panel, so the target app stays in front |
-| `Settings.swift` | Settings window (SwiftUI form) for rarely changed options; shares the panel's model |
-| `Updates.swift` | Daily check of the GitHub releases API; shows a Download button, never installs |
-| `Brand.swift` | The TypeThru mark, shared by the menu bar icon and the app icon |
-| `icon/` | `make-icon.sh` redraws `AppIcon.icns` from `make-icon.swift`; rerun it after changing the mark |
-| `docs/` | README images: logos (made by `icon/make-icon.sh`) and a panel screenshot. Update them when the icon or panel changes |
-| `VirtualKeyboard.swift` | Client for the root helper: macOS keycode → HID usage map, socket exchange, status |
+| `Makefile` | Entry point: `make build`, `test`, `package`, `icon`, `audit`, `check`, `hooks` |
+| `Sources/main.swift` | App: key map from the active layout, Quartz typing methods, typing tests, global hotkey, onboarding, diagnostics |
+| `Sources/Panel.swift` | Menu bar panel (SwiftUI, Liquid Glass on macOS 26+). A non-activating panel, so the target app stays in front |
+| `Sources/Settings.swift` | Settings window (SwiftUI form) for rarely changed options; shares the panel's model |
+| `Sources/Updates.swift` | Daily check of the GitHub releases API; shows a Download button, never installs |
+| `Sources/VirtualKeyboard.swift` | Client for the root helper: keycode → HID usage map, socket exchange, status, verified root setup |
+| `Sources/Brand.swift` | The TypeThru mark, shared by the menu bar icon and the app icon |
 | `helper/virtual-keyboard.cpp` | Root helper (launch daemon). Validates packets and posts HID reports to the Karabiner virtual keyboard |
 | `helper/protocol.hpp` | The packet check `valid()`, shared by the helper and its fuzz test |
-| `helper/fuzz-protocol.cpp` | Fuzz test for `valid()` against the protocol table, run by `test.sh` with AddressSanitizer and UBSan |
-| `helper/install-helper.sh` | Root-side setup: driver package check/install, launch daemon |
-| `helper/uninstall-helper.sh` | Root-side uninstall: helper, and the driver when asked |
-| `build.sh` | Fetches the driver source at a pinned revision, builds and signs a universal `TypeThru.app` |
-| `package.sh` | Runs `build.sh` and makes the download disk image; notarizes it when configured |
-| `test.sh` | Compiles `main.swift` without its entry point and checks event construction; also runs the fuzz tests (fixed seed, so failures reproduce) |
+| `helper/install-helper.sh`, `helper/uninstall-helper.sh` | Root-side setup and uninstall, bundled into the app and run behind the password prompt |
+| `Tests/Tests.swift` | Unit and fuzz tests for the app (fixed seed, so failures reproduce) |
+| `Tests/fuzz-protocol.cpp` | Fuzz test for `valid()` against the protocol table, with AddressSanitizer and UBSan |
+| `scripts/build.sh` | Fetches the driver source at a pinned revision, builds and signs a universal `TypeThru.app` |
+| `scripts/test.sh` | Runs both test suites; posts no input |
+| `scripts/package.sh` | Runs `build.sh` and makes the download disk image; notarizes it when configured |
+| `scripts/audit.sh` | Security and repository audit (see Before every push) |
+| `scripts/check.sh` | Tests, a throwaway build, and the audit; run before every push |
+| `scripts/make-icon.sh`, `scripts/make-icon.swift` | Redraw `Resources/AppIcon.icns` and the README logos |
+| `Resources/AppIcon.icns` | App icon, copied into the app by `build.sh` |
+| `docs/` | README images: logos and a panel screenshot. Update them when the icon or panel changes |
+| `.githooks/pre-push` | Runs `scripts/check.sh` before every push (enable with `make hooks`) |
+| `.github/workflows/` | CI (`make check` on macOS 26) and CodeQL code scanning (Swift and C++) |
 
 Identifiers: bundle ID `io.github.sayre4ux.typethru`, launch daemon label and socket
 `io.github.sayre4ux.typethru.virtual-keyboard`, helper binary `TypeThru-VirtualKeyboard`.
@@ -33,19 +39,55 @@ Builds before 0.3 were called KeyTyper and used `local.keytyper`; setup removes 
 helper and the app moves its settings over once (`migrateFromKeyTyper`). Changing an
 identifier again needs the same kind of migration.
 
-Git-ignored local state: `TypeThru.app/`, `.build/` (driver source, module cache, last
-signing identity, generated `ResourceHashes.swift`), `.autopilot/`, `DEVLOG.md`.
+Git-ignored local state: `TypeThru.app/`, `*.dmg`, `.build/` (driver source, module caches,
+test and check builds, last signing identity, generated `ResourceHashes.swift`), `.autopilot/`,
+`DEVLOG.md` (the local development log and roadmap).
 
 ## Commands
 
 ```sh
-./test.sh                                                  # unit checks; posts no input
-./build.sh                                                 # builds TypeThru.app
+make test                                                  # unit and fuzz tests; posts no input
+make build                                                 # builds TypeThru.app
+make check                                                 # everything required before a push
 TypeThru.app/Contents/MacOS/TypeThru --print-map 'text'    # keys a text would use; types nothing
 TypeThru.app/Contents/Resources/TypeThru-VirtualKeyboard --check-protocol   # helper packet validation
 ```
 
-Run `./test.sh` and `./build.sh` after every code change. Both must pass.
+Run `make test` and `make build` after every code change, and `make check` before every push.
+Ad-hoc `make build` resets Accessibility for the installed copy too; `make check` builds into
+`.build/check` and does not.
+
+## Before every push
+
+`make check` runs automatically from the pre-push hook (`make hooks` once per clone) and in CI.
+It must pass; `git push --no-verify` is only for emergencies. It runs:
+
+1. **Tests**: unit tests and both fuzz suites.
+2. **Build**: a full universal build into `.build/check`.
+3. **Audit** (`scripts/audit.sh`, needs `brew install shellcheck gitleaks`):
+   - clang static analyzer on the root helper
+   - shellcheck on every script
+   - gitleaks over the whole git history
+   - commits to push use GitHub noreply emails
+   - no build output, DMGs, DEVLOG, or `.DS_Store` tracked; nothing tracked is also ignored;
+     no tracked file over 2 MB; no `rm -rf` in scripts
+   - privacy contract: no event taps, logging, or clipboard writes; network only in
+     `Updates.swift`; privacy-related code changes need a README Privacy update in the same push
+   - no VDI vendor names in the app or README
+   - the built app's signature and setup fingerprints; the installed helper's owner and modes
+
+Also review by hand: the diff itself, and that `.gitignore` covers any new kind of local file.
+
+## Release checklist
+
+1. Bump `CFBundleShortVersionString` and `CFBundleVersion` in `scripts/build.sh`.
+2. `make check`, then `make package`.
+3. Install the DMG on a clean user account or VM: Open Anyway, Accessibility, Set Up, the
+   typing tests in a remote session, Settings, Check Now, Uninstall.
+4. Live attack checks in a throwaway VM (only the user runs these; they need root or send keys):
+   tamper with the bundled setup files and confirm Set Up refuses; send malformed and flooding
+   requests to the helper socket; fake the update answer; corrupt the saved settings.
+5. Push, then create a GitHub pre-release with the DMG and its SHA-256 in the notes.
 
 ## What an agent must not do
 
@@ -106,7 +148,7 @@ files. `install-helper.sh` also requires the driver package to be signed by its 
 (team G43BCU2T37). When adding a file that setup runs or installs, add it to both lists.
 
 Keep the two sides in sync. A protocol change touches `VirtualKeyboard.swift`, `valid()` in
-`helper/protocol.hpp`, the reference rules in `helper/fuzz-protocol.cpp`, `--check-protocol`, and needs the user to rerun setup, because the installed
+`helper/protocol.hpp`, the reference rules in `Tests/fuzz-protocol.cpp`, `--check-protocol`, and needs the user to rerun setup, because the installed
 helper in `/Library/PrivilegedHelperTools` is a copy that `build.sh` does not update.
 
 **Driver version** is pinned in three places: `REV` in `build.sh`, the package name in
@@ -143,16 +185,16 @@ macOS ties Accessibility to the signature. `build.sh` uses the first it finds:
 Application certificate, an Apple Development certificate, then ad-hoc. With a certificate the
 permission survives rebuilds; ad-hoc builds reset it, including for the copy in Applications,
 because both share the bundle ID. A self-signed certificate also works:
-`TYPETHRU_SIGN_IDENTITY='TypeThru Local' ./build.sh`.
+`TYPETHRU_SIGN_IDENTITY='TypeThru Local' make build`.
 
-`./package.sh` builds `TypeThru-<version>.dmg`. With a Developer ID it signs with the hardened
+`make package` builds `TypeThru-<version>.dmg`. With a Developer ID it signs with the hardened
 runtime and notarizes when `TYPETHRU_NOTARY_PROFILE` names a `notarytool` keychain profile.
 Releases are GitHub pre-releases with the DMG attached; bump the version in `build.sh` first.
 The README keeps user steps short; put detail for contributors here.
 
 ## Verifying changes
 
-Agents can verify: `./test.sh`, `./build.sh`, `--print-map`, `--check-protocol`, and
+Agents can verify: `make check` (and its parts), `--print-map`, `--check-protocol`, and
 `VirtualKeyboard.status()` via the readiness probe.
 
 Only the user can verify: real typing into a remote session, setup and uninstall, system

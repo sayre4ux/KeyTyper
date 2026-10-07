@@ -1,14 +1,5 @@
-#!/bin/sh
-# Exercise actual event construction without posting any input or reading the clipboard.
-set -eu
-cd "$(dirname "$0")"
-TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/typethru-tests.XXXXXX")
-trap 'rm -rf "$TEST_DIR"' EXIT HUP INT TERM
-cat VirtualKeyboard.swift Panel.swift Settings.swift Updates.swift Brand.swift > "$TEST_DIR/main.swift"
-sed '/^\/\/ MARK: - Entry point/,$d' main.swift >> "$TEST_DIR/main.swift"
-echo 'enum ResourceHashes { static let sha256: [String: String] = [:] }' >> "$TEST_DIR/main.swift"
-cat >> "$TEST_DIR/main.swift" <<'SWIFT'
-
+// Unit and fuzz tests. scripts/test.sh appends this to the app sources (without their entry
+// point) and runs it. Nothing here posts keyboard input or reads the clipboard.
 var checks = 0
 func check(_ condition: @autoclosure () -> Bool, _ message: String) {
     checks += 1
@@ -342,9 +333,3 @@ section("Fuzz: update answers, text, shortcuts, speeds, shell quoting") {
 }
 
 print("PASS: \(checks) checks. No events posted.")
-SWIFT
-clang++ -std=c++23 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all \
-    helper/fuzz-protocol.cpp -o "$TEST_DIR/fuzz-protocol"
-"$TEST_DIR/fuzz-protocol"
-swiftc -module-cache-path "$TEST_DIR/module-cache" "$TEST_DIR/main.swift" -o "$TEST_DIR/tests"
-TEST_DIR="$TEST_DIR" "$TEST_DIR/tests"
