@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
     if (argc != 2 || geteuid() != 0) return 2;
     char* end = nullptr;
     auto uidValue = strtoul(argv[1], &end, 10);
-    if (!end || *end || uidValue < 501 || uidValue > UINT32_MAX) return 2;
+    if (!end || *end || uidValue < 501 || uidValue >= UINT32_MAX) return 2;
     uid_t allowedUID = static_cast<uid_t>(uidValue);
     signal(SIGTERM, [](int) { stopping = 1; });
     signal(SIGINT, [](int) { stopping = 1; });

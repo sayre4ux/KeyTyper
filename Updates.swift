@@ -29,6 +29,11 @@ enum Updates {
         return false
     }
 
+    /// Only TypeThru's own release pages, so the Download button cannot open anything else.
+    static func isReleasePage(_ page: URL) -> Bool {
+        page.scheme == "https" && page.host == "github.com" && page.path.hasPrefix("/sayre4ux/TypeThru/releases/")
+    }
+
     /// The newest release in a GitHub API response. Only release pages of this project are
     /// accepted, so the Download button cannot be pointed anywhere else.
     static func newest(from data: Data) -> Release? {
@@ -36,7 +41,7 @@ enum Updates {
         return list.compactMap { item -> Release? in
             guard item["draft"] as? Bool != true, let tag = item["tag_name"] as? String,
                   !numbers(tag).isEmpty, let link = item["html_url"] as? String, let page = URL(string: link),
-                  page.scheme == "https", page.host == "github.com", page.path.hasPrefix("/sayre4ux/") else { return nil }
+                  isReleasePage(page) else { return nil }
             return Release(version: numbers(tag).map(String.init).joined(separator: "."), page: page)
         }
         .max { isNewer($1.version, than: $0.version) }

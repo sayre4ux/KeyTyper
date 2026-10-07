@@ -619,7 +619,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func scheduleUpdateChecks() {
         if let version = UserDefaults.standard.string(forKey: "availableVersion"),
            let link = UserDefaults.standard.string(forKey: "availablePage"), let page = URL(string: link),
-           Updates.isNewer(version, than: Updates.currentVersion) {
+           Updates.isReleasePage(page), Updates.isNewer(version, than: Updates.currentVersion) {
             panel.model.update = Updates.Release(version: version, page: page)
             panel.model.updateStatus = "Version \(version) is available."
         }
@@ -750,7 +750,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sheet.addButton(withTitle: "Later")
         guard sheet.runModal() == .alertFirstButtonReturn else { return }
         let result = VirtualKeyboard.runAsAdministrator(
-            "install-helper", [String(getuid())],
+            "install-helper", files: ["TypeThru-VirtualKeyboard", "Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg"],
+            [String(getuid())],
             prompt: "TypeThru needs your password to install its Virtual Keyboard helper.")
         if case let .failed(reason) = result { alert("Setup did not finish", reason); return }
         guard result == .done else { return }

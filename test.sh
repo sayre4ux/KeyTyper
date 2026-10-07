@@ -6,6 +6,7 @@ TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/typethru-tests.XXXXXX")
 trap 'rm -rf "$TEST_DIR"' EXIT HUP INT TERM
 cat VirtualKeyboard.swift Panel.swift Settings.swift Updates.swift Brand.swift > "$TEST_DIR/main.swift"
 sed '/^\/\/ MARK: - Entry point/,$d' main.swift >> "$TEST_DIR/main.swift"
+echo 'enum ResourceHashes { static let sha256: [String: String] = [:] }' >> "$TEST_DIR/main.swift"
 cat >> "$TEST_DIR/main.swift" <<'SWIFT'
 
 var checks = 0
@@ -210,6 +211,9 @@ section("Update check") {
     """
     let newest = Updates.newest(from: Data(json.utf8))
     check(newest?.version == "0.4.1", "newest release, skipping drafts, other sites, plain http, and untagged")
+    check(!Updates.isReleasePage(URL(string: "https://github.com/sayre4ux/openviewer/releases/tag/v9")!), "another repository of the same owner is refused")
+    check(!Updates.isReleasePage(URL(string: "file:///Applications/Calculator.app")!), "local files are refused")
+    check(Updates.isReleasePage(URL(string: "https://github.com/sayre4ux/TypeThru/releases/tag/v0.3.0-beta")!), "TypeThru release pages are accepted")
     check(newest?.page.absoluteString == "https://github.com/sayre4ux/TypeThru/releases/tag/v0.4.1", "release page")
     check(Updates.newest(from: Data("not json".utf8)) == nil && Updates.newest(from: Data("[]".utf8)) == nil, "bad or empty response")
 }
@@ -229,7 +233,49 @@ section("Administrator prompt quoting") {
     check(VirtualKeyboard.appleScriptQuoted("say \"hi\" \\ x") == "\"say \\\"hi\\\" \\\\ x\"", "AppleScript quoting")
 }
 
+// Runs the root command as this user, with dummy files, to check the fingerprint gate.
+section("Setup runs only unchanged files") {
+    let resources = (ProcessInfo.processInfo.environment["TEST_DIR"] ?? NSTemporaryDirectory()) + "/Res ources"
+    try? FileManager.default.createDirectory(atPath: resources, withIntermediateDirectories: true)
+    func write(_ name: String, _ text: String) { try? text.write(toFile: resources + "/" + name, atomically: true, encoding: .utf8) }
+    func sha(_ name: String) -> String {
+        let process = Process(), pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/shasum")
+        process.arguments = ["-a", "256", resources + "/" + name]
+        process.standardOutput = pipe
+        try? process.run(); process.waitUntilExit()
+        return String(String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).prefix(64))
+    }
+    func run(_ command: String) -> (status: Int32, output: String) {
+        let process = Process(), pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        process.standardOutput = pipe; process.standardError = pipe
+        try? process.run(); process.waitUntilExit()
+        return (process.terminationStatus, String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
+    }
+    write("setup.sh", "cd \"$(dirname \"$0\")\"; cat data.txt; echo \" ran:$1\"; ls -ld . | cut -c1-10")
+    write("data.txt", "data ok")
+    var hashes = ["setup.sh": sha("setup.sh"), "data.txt": sha("data.txt")]
+    let command = { VirtualKeyboard.adminCommand(script: "setup.sh", files: ["data.txt"], arguments: ["501"],
+                                                 resources: resources, hashes: hashes) }
+    let good = run(command()!)
+    check(good.status == 0 && good.output.contains("data ok ran:501"), "unchanged files run from the copy: \(good.output)")
+    check(good.output.contains("drwx------"), "copies sit in a folder only the owner can open")
+    write("data.txt", "data changed")
+    let changed = run(command()!)
+    check(changed.status == 3 && changed.output.contains("changed after download") && !changed.output.contains("ran:"),
+          "a changed file stops setup before anything runs")
+    write("data.txt", "data ok")
+    write("setup.sh", "echo evil")
+    check(run(command()!).status == 3, "a changed script does not run")
+    hashes["data.txt"] = nil
+    check(command() == nil, "a missing fingerprint refuses to build the command")
+    hashes["data.txt"] = String(repeating: "z", count: 64)
+    check(command() == nil, "a malformed fingerprint is refused")
+}
+
 print("PASS: \(checks) checks. No events posted.")
 SWIFT
 swiftc -module-cache-path "$TEST_DIR/module-cache" "$TEST_DIR/main.swift" -o "$TEST_DIR/tests"
-"$TEST_DIR/tests"
+TEST_DIR="$TEST_DIR" "$TEST_DIR/tests"

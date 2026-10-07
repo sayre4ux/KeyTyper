@@ -32,7 +32,7 @@ helper and the app moves its settings over once (`migrateFromKeyTyper`). Changin
 identifier again needs the same kind of migration.
 
 Git-ignored local state: `TypeThru.app/`, `.build/` (driver source, module cache, last
-signing identity), `.autopilot/`, `DEVLOG.md`.
+signing identity, generated `ResourceHashes.swift`), `.autopilot/`, `DEVLOG.md`.
 
 ## Commands
 
@@ -94,6 +94,14 @@ helper, which presses the key on the Karabiner DriverKit virtual keyboard:
 Reply byte: 0 done or ready, 1 driver not ready, 2 invalid packet. The helper accepts
 connections only from the uid given at install, via `getpeereid`. Socket:
 `/var/run/io.github.sayre4ux.typethru.virtual-keyboard.sock`, mode 0600, owned by that user.
+
+**Root setup.** The app bundle is owned by the user, so a script in it must never run as root
+directly. `build.sh` writes the SHA-256 of `install-helper.sh`, `uninstall-helper.sh`, the
+helper, and the driver package into `.build/ResourceHashes.swift`, compiled into the app.
+`VirtualKeyboard.adminCommand` copies the files into a new root-only folder, checks the copies
+against those hashes, and runs only the copies; `test.sh` exercises this as the user with dummy
+files. `install-helper.sh` also requires the driver package to be signed by its developer
+(team G43BCU2T37). When adding a file that setup runs or installs, add it to both lists.
 
 Keep the two sides in sync. A protocol change touches `VirtualKeyboard.swift`, `valid()` and
 `--check-protocol` in the helper, and needs the user to rerun setup, because the installed

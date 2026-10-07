@@ -87,9 +87,11 @@ When a new version is out, the panel shows it with a **Download** button.
   automatically.
 - The virtual keyboard helper runs as root because the driver requires it. It accepts key
   presses only from your Mac account and cannot read keyboard input. Other apps running as you
-  could also use it, so uninstall TypeThru when you no longer need it.
-- Setup and uninstall run as administrator only after you enter your password. Setup checks
-  the driver's signature and never replaces a different driver version.
+  could also use it to send key presses, even without Accessibility permission, so uninstall
+  TypeThru when you no longer need it.
+- Setup and uninstall run as administrator only after you enter your password. First,
+  TypeThru checks that its setup files are unchanged since download and that the driver is
+  signed by its own developer. Setup never replaces a different driver version.
 
 Report security issues through GitHub private vulnerability reporting.
 

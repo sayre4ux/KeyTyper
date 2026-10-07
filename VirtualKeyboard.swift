@@ -20,19 +20,38 @@ enum VirtualKeyboard {
 
     enum AdminResult: Equatable { case done, cancelled, failed(String) }
 
-    /// Runs a bundled root script behind the standard macOS administrator password prompt.
-    /// NSAppleScript is not thread-safe, so call this on the main thread.
-    static func runAsAdministrator(_ script: String, _ arguments: [String], prompt: String) -> AdminResult {
-        guard let path = Bundle.main.path(forResource: script, ofType: "sh") else {
-            return .failed("\(script).sh is missing from the app. Download TypeThru again.")
+    /// Runs a bundled root script behind the standard macOS administrator password prompt, with
+    /// `files` it needs beside it. NSAppleScript is not thread-safe, so call this on the main thread.
+    static func runAsAdministrator(_ script: String, files: [String] = [], _ arguments: [String], prompt: String) -> AdminResult {
+        guard let resources = Bundle.main.resourcePath,
+              let command = adminCommand(script: script + ".sh", files: files, arguments: arguments,
+                                         resources: resources, hashes: ResourceHashes.sha256) else {
+            return .failed("This copy of TypeThru is incomplete. Download TypeThru again.")
         }
-        let command = (["/bin/bash", path] + arguments).map(shellQuoted).joined(separator: " ")
         let source = "do shell script \(appleScriptQuoted(command)) with prompt \(appleScriptQuoted(prompt)) with administrator privileges"
         var error: NSDictionary?
         _ = NSAppleScript(source: source)?.executeAndReturnError(&error)
         guard let error else { return .done }
         if error[NSAppleScript.errorNumber] as? Int == -128 { return .cancelled }
         return .failed(error[NSAppleScript.errorMessage] as? String ?? "Unknown error.")
+    }
+
+    /// The shell command run as root. The app bundle is owned by the user, so any program running as
+    /// the user could change a script in it. The command therefore copies the script and its files
+    /// into a new folder only root can write, checks each copy against the SHA-256 built into the
+    /// app by build.sh, and runs only the checked copies. Returns nil if a fingerprint is missing.
+    static func adminCommand(script: String, files: [String], arguments: [String], resources: String,
+                             hashes: [String: String]) -> String? {
+        var steps = ["set -eu", "umask 077", "d=$(/usr/bin/mktemp -d /private/tmp/typethru.XXXXXX)",
+                     "trap '/bin/rm -f \"$d\"/*; /bin/rmdir \"$d\"' EXIT"]
+        for file in [script] + files {
+            guard let hash = hashes[file], hash.count == 64, hash.allSatisfy(\.isHexDigit) else { return nil }
+            steps.append("/bin/cp \(shellQuoted(resources + "/" + file)) \"$d\"/")
+            steps.append("[ \"$(/usr/bin/shasum -a 256 \"$d\"/\(shellQuoted(file)) | /usr/bin/cut -c1-64)\" = \(hash.lowercased()) ]"
+                         + " || { echo 'TypeThru files were changed after download. Download TypeThru again.' >&2; exit 3; }")
+        }
+        steps.append("/bin/bash \"$d\"/" + shellQuoted(script) + " " + arguments.map(shellQuoted).joined(separator: " "))
+        return steps.joined(separator: "; ")
     }
 
     static func shellQuoted(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }

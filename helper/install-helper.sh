@@ -3,7 +3,7 @@
 # Messages go to stderr, which TypeThru shows if setup fails.
 set -euo pipefail
 cd "$(dirname "$0")"
-[[ $EUID -eq 0 && $# -eq 1 && "$1" =~ ^[0-9]+$ && "$1" -ge 501 ]] || exit 2
+[[ $EUID -eq 0 && $# -eq 1 && "$1" =~ ^[0-9]{3,10}$ && "$1" -ge 501 && "$1" -lt 4294967295 ]] || exit 2
 USER_UID="$1"
 LABEL=io.github.sayre4ux.typethru.virtual-keyboard
 DEST=/Library/PrivilegedHelperTools/TypeThru-VirtualKeyboard
@@ -13,7 +13,10 @@ if [[ -e "$DRIVER_INFO" ]]; then
     VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$DRIVER_INFO")
     [[ "$VERSION" == '8.6.0' ]] || { echo "Installed Karabiner driver is $VERSION; this build requires 8.6.0. No driver changes made." >&2; exit 1; }
 else
-    /usr/sbin/pkgutil --check-signature Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg
+    # Only the driver's own developer, not any Developer ID.
+    SIGNATURE=$(/usr/sbin/pkgutil --check-signature Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg)
+    [[ "$SIGNATURE" == *'Developer ID Installer: Fumihiko Takayama (G43BCU2T37)'* ]] || {
+        echo 'The Karabiner driver package is not signed by its developer. Download TypeThru again.' >&2; exit 1; }
     /usr/sbin/spctl --assess --type install Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg
     /usr/sbin/installer -pkg Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg -target /
 fi
